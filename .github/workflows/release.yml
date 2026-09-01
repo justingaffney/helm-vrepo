@@ -1,0 +1,765 @@
+name: Create Release
+run-name: 'Creating Release: ${{ github.ref_name }}'
+
+# Ensure this can only run once per tag
+concurrency:
+  group: create-release_-${{ github.ref_name }}
+  cancel-in-progress: false
+
+on:
+  push:
+    tags:
+      - v*.*.*
+
+permissions: {}
+
+env:
+  APPLICATION_NAME: helm-vrepo
+
+  OCI_REGISTRY: ghcr.io
+
+  OCI_IMAGE_ANNOTATIONS_TITLE: helm-vrepo
+  OCI_IMAGE_ANNOTATIONS_AUTHORS: helm-vrepo@opensource.justingaffney.dev
+  OCI_IMAGE_ANNOTATIONS_VENDOR: https://github.com/${{ github.repository_owner }}
+  OCI_IMAGE_ANNOTATIONS_URL: https://github.com/${{ github.repository }}
+  OCI_IMAGE_ANNOTATIONS_SOURCE: https://github.com/${{ github.repository }}
+  OCI_IMAGE_ANNOTATIONS_DOCUMENTATION: https://github.com/${{ github.repository }}
+  OCI_IMAGE_ANNOTATIONS_LICENSES: Apache-2.0
+  OCI_IMAGE_ANNOTATIONS_REVISION: ${{ github.sha }}
+
+  CLI_OCI_IMAGE_NAME: helm-vrepo-cli
+  CLI_OCI_IMAGE_DESCRIPTION: CLI tool for building virtual Helm repositories by aggregating charts from multiple upstream repositories (HTTP, OCI, or manual sources), and optionally filtering the chart versions using configurable policies.
+
+  PLUGIN_OCI_IMAGE_NAME: helm-vrepo-plugin
+  PLUGIN_OCI_IMAGE_DESCRIPTION: Helm plugin for building virtual Helm repositories by aggregating charts from multiple upstream repositories (HTTP, OCI, or manual sources), and optionally filtering the chart versions using configurable policies.
+
+  PROJECT_FILE_PATH: src/VRepo.Cli/VRepo.Cli.csproj
+
+  RELEASE_BUILD_DIRECTORY_PATH: release/build
+  RELEASE_ASSETS_DIRECTORY_PATH: release/assets
+  RELEASE_PLUGIN_DIRECTORY_PATH: release/plugin
+
+  BUILD_EXECUTABLES_DIRECTORY_NAME: executables
+  BUILD_OCI_IMAGE_DIRECTORY_NAME: oci-images
+
+  PLUGIN_SOURCE_DIRECTORY_NAME: source
+  PLUGIN_BINARIES_DIRECTORY_NAME: bin
+  PLUGIN_PACKAGE_DIRECTORY_NAME: package
+
+jobs:
+  run:
+    name: Create Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required to create GitHub Releases
+      packages: write # Required to push OCI images
+      id-token: write # Required for OCI image signing
+    steps:
+      - name: '[Git] Checkout'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: '[GitHub] Prepare Release Assets Directory'
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path $env:RELEASE_ASSETS_DIRECTORY_PATH | Out-Null
+
+      - name: '[GitHub] Format Release Version'
+        shell: pwsh
+        run: |
+          # Remove 'v' prefix
+          $releaseVersion = $env:GITHUB_REF_NAME.Substring(1)
+
+          # Write to job environment variables
+          Add-Content -Path $env:GITHUB_ENV -Value "RELEASE_VERSION=$releaseVersion"
+
+      - name: '[SBOM] Install Syft'
+        uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          syft-version: v1.51.1
+
+      - name: '[.NET] Install SDK'
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 11.0.100-preview.7.26381.103
+
+      - name: '[.NET] Restore Solution'
+        run: dotnet restore -p:PublishReadyToRun=true
+
+      - name: '[.NET] Build Solution'
+        run: dotnet build -c Release --no-restore
+
+      - name: '[.NET] Test Solution'
+        run: dotnet test -c Release --no-build
+
+      - name: '[.NET] Build CLI (all platforms)'
+        shell: pwsh
+        run: |
+          function Build-Executable {
+            param(
+              [Parameter(Mandatory = $true)]
+              [ValidateSet('linux', 'windows', 'macos')]
+              [string]$OS,
+
+              [Parameter(Mandatory = $true)]
+              [ValidateSet('amd64', 'arm64')]
+              [string]$Architecture
+            )
+
+            $platformName = "${OS}-${Architecture}"
+            Write-Host "==== BEGIN: Building Executable '${platformName}' ===="
+
+            $runtimeIdentifier = switch ($OS) {
+              'linux' {
+                switch ($Architecture) {
+                  'amd64' { 'linux-x64' }
+                  'arm64' { 'linux-arm64' }
+                }
+              }
+              'windows' {
+                switch ($Architecture) {
+                  'amd64' { 'win-x64' }
+                  'arm64' { 'win-arm64' }
+                }
+              }
+              'macos' {
+                switch ($Architecture) {
+                  'amd64' { 'osx-x64' }
+                  'arm64' { 'osx-arm64' }
+                }
+              }
+            }
+
+            $buildDirectoryPath = Join-Path $env:RELEASE_BUILD_DIRECTORY_PATH $platformName $env:BUILD_EXECUTABLES_DIRECTORY_NAME
+
+            Write-Host "Building executable:"
+            dotnet publish $env:PROJECT_FILE_PATH -c Release --no-restore -r $runtimeIdentifier `
+              --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=true -p:PublishReadyToRun=false `
+              -p:DebugSymbols=false -p:DebugType=None `
+              -o $buildDirectoryPath
+
+            Write-Host "Creating archive:"
+            $releaseAssetNameWithoutExtension = "${env:APPLICATION_NAME}-${platformName}"
+            if ($OS -eq 'windows') {
+              $releaseAssetName = "${releaseAssetNameWithoutExtension}.zip"
+              Compress-Archive -Path (Join-Path $buildDirectoryPath '*') -DestinationPath (Join-Path $env:RELEASE_ASSETS_DIRECTORY_PATH $releaseAssetName) -Force
+            }
+            else {
+              $releaseAssetName = "${releaseAssetNameWithoutExtension}.tar.gz"
+              tar -czvf (Join-Path $env:RELEASE_ASSETS_DIRECTORY_PATH $releaseAssetName) -C $buildDirectoryPath .
+            }
+
+            Write-Host "Generating SBOM:"
+            $sbomFilePath = Join-Path $env:RELEASE_ASSETS_DIRECTORY_PATH "${releaseAssetName}.sbom.json"
+            syft scan "dir:${buildDirectoryPath}" `
+              --source-name $env:APPLICATION_NAME `
+              --source-version $env:RELEASE_VERSION `
+              --output spdx-json > $sbomFilePath
+
+            Write-Host "==== END ===="
+          }
+
+          function Build-OciImage {
+            param(
+              [Parameter(Mandatory = $true)]
+              [ValidateSet('amd64', 'arm64')]
+              [string]$Architecture
+            )
+
+            $platformName = "linux-${Architecture}"
+            Write-Host "==== BEGIN: Building OCI Image '${platformName}' ===="
+
+            $runtimeIdentifier = switch ($Architecture) {
+              'amd64' { 'linux-x64' }
+              'arm64' { 'linux-arm64' }
+            }
+
+            # Need to make the path absolute, otherwise it is treated as relative to the project directory for some reason
+            $buildDirectoryPath = Join-Path $env:GITHUB_WORKSPACE $env:RELEASE_BUILD_DIRECTORY_PATH $platformName $env:BUILD_OCI_IMAGES_DIRECTORY_NAME
+            $ociLayoutArchiveFilePath = Join-Path $buildDirectoryPath "${env:APPLICATION_NAME}.tar.gz"
+            dotnet publish $env:PROJECT_FILE_PATH -c Release --no-restore -r $runtimeIdentifier `
+              --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=true -p:PublishReadyToRun=false `
+              -p:ContainerBaseImage=mcr.microsoft.com/dotnet/runtime-deps:11.0.0-preview.7 `
+              -p:DebugSymbols=false -p:DebugType=None `
+              -t:PublishContainer `
+              -p:ContainerImageFormat=OCI `
+              -p:ContainerArchiveOutputPath=`"${ociLayoutArchiveFilePath}`" `
+              -p:ContainerGenerateLabels=true `
+              -p:ContainerTitle=`"${env:OCI_IMAGE_ANNOTATIONS_TITLE}`" `
+              -p:ContainerDescription=`"${env:CLI_OCI_IMAGE_DESCRIPTION}`" `
+              -p:ContainerAuthors=`"${env:OCI_IMAGE_ANNOTATIONS_AUTHORS}`" `
+              -p:ContainerVendor=`"${env:OCI_IMAGE_ANNOTATIONS_VENDOR}`" `
+              -p:ContainerLicenseExpression=`"${env:OCI_IMAGE_ANNOTATIONS_LICENSES}`" `
+              -p:ContainerInformationUrl=`"${env:OCI_IMAGE_ANNOTATIONS_URL}`" `
+              -p:ContainerDocumentationUrl=`"${env:OCI_IMAGE_ANNOTATIONS_DOCUMENTATION}`"
+
+            Write-Host "==== END ===="
+          }
+
+          $executablePlatforms = @(
+            ('linux', 'amd64'),
+            ('linux', 'arm64'),
+            ('windows', 'amd64'),
+            ('windows', 'arm64'),
+            ('macos', 'amd64'),
+            ('macos', 'arm64')
+          )
+          $executablePlatforms | ForEach-Object {
+            Build-Executable -OS $_[0] -Architecture $_[1]
+          }
+
+          $ociImageArchitectures = @(
+            'amd64',
+            'arm64'
+          )
+          $ociImageArchitectures | ForEach-Object {
+            Build-OciImage -Architecture $_
+          }
+
+      - name: '[JSON Schema] Export'
+        shell: pwsh
+        run: |
+          $releaseAssetFileName = "config-schema.json"
+          $outputPath = Join-Path $env:RELEASE_ASSETS_DIRECTORY_PATH $releaseAssetFileName
+          dotnet run --project $env:PROJECT_FILE_PATH -c Release --no-build -- config schema --output $outputPath
+
+      - name: '[SHA256] Generate Checksums'
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Path $env:RELEASE_ASSETS_DIRECTORY_PATH -File | Where-Object {
+            $_.Name.EndsWith('.tar.gz') -or
+            $_.Name.EndsWith('.zip') -or
+            $_.Name.EndsWith('.sbom.json')
+          }
+
+          # Hash files
+          $lines = foreach ($file in $files) {
+            $hash = (Get-FileHash -Path $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($file.Name)"
+          }
+
+          # Write hashes to checksum file
+          $lines | Set-Content -Path 'checksums.sha256' -Encoding utf8
+
+      - name: '[GPG] Import Private Key'
+        shell: pwsh
+        env:
+          GPG_SIGNING_KEY_PRIVATE_KEY: ${{ secrets.GPG_SIGNING_KEY_PRIVATE_KEY }}
+        run: $env:GPG_SIGNING_KEY_PRIVATE_KEY | gpg --batch --import
+
+      - name: '[GPG] Export Public Key'
+        shell: pwsh
+        env:
+          GPG_SIGNING_KEY_NAME: ${{ vars.GPG_SIGNING_KEY_NAME }}
+        run: |
+          $releaseAssetFileName = "public-key.asc"
+          $outputPath = Join-Path $env:RELEASE_ASSETS_DIRECTORY_PATH $releaseAssetFileName
+          gpg --armor --output $outputPath --export $env:GPG_SIGNING_KEY_NAME
+
+      - name: '[GPG] Sign Release Assets'
+        shell: pwsh
+        env:
+          GPG_SIGNING_KEY_NAME: ${{ vars.GPG_SIGNING_KEY_NAME }}
+          GPG_SIGNING_KEY_PASSPHRASE: ${{ secrets.GPG_SIGNING_KEY_PASSPHRASE }}
+        run: |
+          $files = Get-ChildItem -Path $env:RELEASE_ASSETS_DIRECTORY_PATH -File | Where-Object {
+            $_.Name.EndsWith('.tar.gz') -or
+            $_.Name.EndsWith('.zip') -or
+            $_.Name.EndsWith('.sbom.json')
+          }
+
+          foreach ($file in $files) {
+            $filePath = $file.FullName
+
+            Write-Host "==== BEGIN: Signing release asset file '${filePath}' ===="
+
+            Write-Host "Signing file:"
+            gpg --batch --pinentry-mode loopback --passphrase $env:GPG_SIGNING_KEY_PASSPHRASE --local-user $env:GPG_SIGNING_KEY_NAME --armor --detach-sign $filePath
+
+            Write-Host "Testing file signature verification:"
+            gpg --trust-model always --verify "${filePath}.asc" $filePath
+
+            Write-Host "==== END ===="
+          }
+
+      - name: '[Sigstore] Install Cosign'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+
+      - name: '[Sigstore] Sign Release Assets'
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Path $env:RELEASE_ASSETS_DIRECTORY_PATH -File | Where-Object {
+            $_.Name.EndsWith('.tar.gz') -or
+            $_.Name.EndsWith('.zip') -or
+            $_.Name.EndsWith('.sbom.json')
+          }
+
+          foreach ($file in $files) {
+            $filePath = $file.FullName
+
+            Write-Host "==== BEGIN: Signing release asset file '${filePath}' ===="
+
+            Write-Host "Signing file:"
+            cosign sign-blob --yes --bundle "${filePath}.sigstore.json" $filePath
+
+            Write-Host "Testing file signature verification:"
+            cosign verify-blob --bundle "${filePath}.sigstore.json" $filePath `
+                --certificate-oidc-issuer "https://token.actions.githubusercontent.com" `
+                --certificate-identity "https://github.com/${env:GITHUB_WORKFLOW_REF}"
+
+            Write-Host "==== END ===="
+          }
+
+      - name: '[Helm] Install'
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v4.2.4
+
+      - name: '[Helm] Package Plugin'
+        id: package-plugin
+        shell: pwsh
+        env:
+          GPG_SIGNING_KEY_NAME: ${{ vars.GPG_SIGNING_KEY_NAME }}
+          GPG_SIGNING_KEY_PASSPHRASE: ${{ secrets.GPG_SIGNING_KEY_PASSPHRASE }}
+        run: |
+          # Prepare plugin YAML file
+          $pluginYamlFileName = "plugin.yaml"
+          $pluginYamlFilePath = "./${pluginYamlFileName}"
+          $pluginName = yq '.name' $pluginYamlFilePath # Get the configured plugin name
+          yq -i ".version = `"${env:RELEASE_VERSION}`"" $pluginYamlFilePath # Replace the version placeholder with the actual version
+
+          # Determine plugin package file name
+          $defaultPluginPackageFileName = "${pluginName}-${env:RELEASE_VERSION}.tgz"
+          $pluginPackageFileName = "${env:PLUGIN_OCI_IMAGE_NAME}-${env:RELEASE_VERSION}.tgz"
+          "package-file-name=${pluginPackageFileName}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+          function Package-HelmPlugin {
+            param(
+              [Parameter(Mandatory = $true)]
+              [ValidateSet('linux', 'windows', 'macos')]
+              [string]$OS,
+
+              [Parameter(Mandatory = $true)]
+              [ValidateSet('amd64', 'arm64')]
+              [string]$Architecture
+            )
+
+            $platformName = "${OS}-${Architecture}"
+            Write-Host "==== BEGIN: Packaging plugin for '${platformName}' ===="
+
+            # Copy executables into plugin source directory
+            $executablesBuildDirectoryPath = Join-Path $env:RELEASE_BUILD_DIRECTORY_PATH $platformName $env:BUILD_EXECUTABLES_DIRECTORY_NAME
+            $pluginPlatformDirectoryPath = Join-Path $env:RELEASE_PLUGIN_DIRECTORY_PATH $platformName
+            $pluginSourceDirectoryPath = Join-Path $pluginPlatformDirectoryPath $env:PLUGIN_SOURCE_DIRECTORY_NAME
+            $pluginPackageDirectoryPath = Join-Path $pluginPlatformDirectoryPath $env:PLUGIN_PACKAGE_DIRECTORY_NAME
+            New-Item -ItemType Directory -Force -Path $pluginSourceDirectoryPath | Out-Null
+            Copy-Item -Recurse -Force $executablesBuildDirectoryPath (Join-Path $pluginSourceDirectoryPath $env:PLUGIN_BINARIES_DIRECTORY_NAME)
+            Copy-Item -Path $pluginYamlFilePath -Destination (Join-Path $pluginSourceDirectoryPath $pluginYamlFileName) -Force
+
+            # Create package
+            helm plugin package $pluginSourceDirectoryPath --destination $pluginPackageDirectoryPath --sign=false
+            $defaultPluginPackageFilePath = Join-Path $pluginPackageDirectoryPath $defaultPluginPackageFileName
+            $pluginPackageFilePath = Join-Path $pluginPackageDirectoryPath $pluginPackageFileName
+
+            # Rename from default file name to actual file name
+            Move-Item -Path $defaultPluginPackageFilePath -Destination $pluginPackageFilePath
+
+            # Create provenance file manually.
+            # 
+            # Helm is not able to read "GNU dummy key", so built-in provenance
+            # file creation and signing fails. It needs to be done manually.
+            Write-Host "Signing plugin:"
+            $unsignedProvenanceFilePath = Join-Path $pluginSourceDirectoryPath "provenance.unsigned"
+            Copy-Item -Path (Join-Path $pluginSourceDirectoryPath $pluginYamlFileName) -Destination $unsignedProvenanceFilePath -Force
+            Add-Content -Path $unsignedProvenanceFilePath -Value "..."
+            Add-Content -Path $unsignedProvenanceFilePath -Value "files:"
+            $sha256Hash = (Get-FileHash -Path $pluginPackageFilePath -Algorithm SHA256).Hash.ToLowerInvariant()
+            Add-Content -Path $unsignedProvenanceFilePath -Value "  ${defaultPluginPackageFileName}: sha256:${sha256Hash}"
+            Add-Content -Path $unsignedProvenanceFilePath -Value "  ${pluginPackageFileName}: sha256:${sha256Hash}"
+            gpg --batch --pinentry-mode loopback --passphrase $env:GPG_SIGNING_KEY_PASSPHRASE --local-user $env:GPG_SIGNING_KEY_NAME --clearsign --output "${pluginPackageFilePath}.prov" $unsignedProvenanceFilePath
+
+            # Test package verification succeeds
+            $gpgPublicKeyFilePath = [System.IO.Path]::GetTempFileName()
+            try {
+              Write-Host "Testing plugin signature verification:"
+              gpg --batch --yes --output $gpgPublicKeyFilePath --export $env:GPG_SIGNING_KEY_NAME
+              helm plugin verify $pluginPackageFilePath --keyring $gpgPublicKeyFilePath
+            }
+            finally {
+              Remove-Item -Path $gpgPublicKeyFilePath -Force -ErrorAction SilentlyContinue
+            }
+
+            Write-Host "==== END ===="
+          }
+
+          $platforms = @(
+            ('linux', 'amd64'),
+            ('linux', 'arm64'),
+            ('windows', 'amd64'),
+            ('windows', 'arm64'),
+            ('macos', 'amd64'),
+            ('macos', 'arm64')
+          )
+          $platforms | ForEach-Object {
+            Package-HelmPlugin -OS $_[0] -Architecture $_[1]
+          }
+
+      - name: '[GPG] Delete Imported Keys'
+        if: always()
+        shell: pwsh
+        env:
+          GPG_SIGNING_KEY_NAME: ${{ vars.GPG_SIGNING_KEY_NAME }}
+        run: |
+          # Ignore errors so cleanup never fails the job
+          $ErrorActionPreference = "SilentlyContinue"
+
+          # Attempt to delete private and public keys
+          gpg --batch --yes --delete-secret-keys $env:GPG_SIGNING_KEY_NAME *>$null
+          gpg --batch --yes --delete-keys $env:GPG_SIGNING_KEY_NAME *>$null
+
+          # Kill gpg-agent to clear cache
+          Stop-Process -Name "gpg-agent" -Force
+
+      - name: '[OCI] Install ORAS'
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+        with:
+          version: 1.3.3
+
+      - name: '[OCI] Push CLI OCI Image'
+        shell: pwsh
+        env:
+          OCI_REGISTRY_USERNAME: ${{ github.actor }}
+          OCI_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          OCI_IMAGE_REPOSITORY: ${{ env.OCI_REGISTRY }}/${{ github.repository }}/${{ env.CLI_OCI_IMAGE_NAME }}
+        run: |
+          function Push-SinglePlatformManifest {
+            param(
+              [Parameter(Mandatory = $true)]
+              [ValidateSet('amd64', 'arm64')]
+              [string]$Architecture
+            )
+
+            $platformName = "linux-${Architecture}"
+            Write-Host "==== BEGIN: Pushing manifest for platform '${platformName}' ===="
+
+            $ociLayoutArchiveFilePath = Join-Path $env:RELEASE_BUILD_DIRECTORY_PATH $platformName $env:BUILD_OCI_IMAGES_DIRECTORY_NAME "${env:APPLICATION_NAME}.tar.gz"
+
+            $copyOutput = oras cp `
+              --to-username $env:OCI_REGISTRY_USERNAME --to-password $env:OCI_REGISTRY_PASSWORD `
+              --from-oci-layout "${ociLayoutArchiveFilePath}:latest" `
+              "${env:OCI_IMAGE_REPOSITORY}"
+
+            # Get the digest
+            $digest = ($copyOutput | Select-String -Pattern 'Digest: (.+)' | Select-Object -Last 1).Matches.Groups[1].Value
+            if (-not $digest) {
+              Write-Host "ORAS output (for debugging):"
+              Write-Host $copyOutput
+              throw "Unable to determine copied manifest digest for platform '${platformName}'"
+            }
+
+            Write-Host "Digest: '${digest}'"
+            Write-Host "==== END ===="
+            return $digest
+          }
+
+          function Push-MultiPlatformManifestIndex {
+            param(
+              [Parameter(Mandatory = $true)]
+              [string[]]$PlatformDigests
+            )
+
+            $manifestRefs = $PlatformDigests | ForEach-Object {
+              $digest = $_
+              "${env:OCI_IMAGE_REPOSITORY}@${digest}"
+            }
+
+            Write-Host "==== BEGIN: Pushing manifest index for all platforms ===="
+
+            $createdTimestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            $pushOutput = $env:OCI_REGISTRY_PASSWORD | & oras manifest index create `
+                --username $env:OCI_REGISTRY_USERNAME --password-stdin `
+                "${env:OCI_IMAGE_REPOSITORY}:${env:RELEASE_VERSION}" `
+                --annotation "org.opencontainers.image.title=${env:OCI_IMAGE_ANNOTATIONS_TITLE}" `
+                --annotation "org.opencontainers.image.description=${env:CLI_OCI_IMAGE_DESCRIPTION}" `
+                --annotation "org.opencontainers.image.created=${createdTimestamp}" `
+                --annotation "org.opencontainers.image.revision=${env:OCI_IMAGE_ANNOTATIONS_REVISION}" `
+                --annotation "org.opencontainers.image.version=${env:RELEASE_VERSION}" `
+                --annotation "org.opencontainers.image.authors=${env:OCI_IMAGE_ANNOTATIONS_AUTHORS}" `
+                --annotation "org.opencontainers.image.vendor=${env:OCI_IMAGE_ANNOTATIONS_VENDOR}" `
+                --annotation "org.opencontainers.image.licenses=${env:OCI_IMAGE_ANNOTATIONS_LICENSES}" `
+                --annotation "org.opencontainers.image.url=${env:OCI_IMAGE_ANNOTATIONS_URL}" `
+                --annotation "org.opencontainers.image.source=${env:OCI_IMAGE_ANNOTATIONS_SOURCE}" `
+                --annotation "org.opencontainers.image.documentation=${env:OCI_IMAGE_ANNOTATIONS_DOCUMENTATION}" `
+                @manifestRefs
+
+            # Get the digest
+            $digest = ($pushOutput | Select-String -Pattern 'Digest: (.+)' | Select-Object -Last 1).Matches.Groups[1].Value
+            if (-not $digest) {
+              Write-Host "ORAS output (for debugging):"
+              Write-Host $pushOutput
+              throw "Unable to determine pushed manifest index digest"
+            }
+
+            Write-Host "Digest: '${digest}'"
+            Write-Host "==== END ===="
+            return $digest
+          }
+
+          function Sign-Image {
+            param(
+              [Parameter(Mandatory = $true)]
+              [string]$Digest
+            )
+
+            $imageReferenceUsingDigest = "${env:OCI_IMAGE_REPOSITORY}@${Digest}"
+            $imageReferenceUsingTag = "${env:OCI_IMAGE_REPOSITORY}:${env:RELEASE_VERSION}"
+
+            Write-Host "==== BEGIN: Signing image '${imageReferenceUsingDigest}' ===="
+
+            Write-Host "Signing image:"
+            try {
+              # Set registry credentials
+              $env:COSIGN_REGISTRY_USERNAME = "${env:OCI_REGISTRY_USERNAME}"
+              $env:COSIGN_REGISTRY_PASSWORD = "${env:OCI_REGISTRY_PASSWORD}"
+
+              cosign sign --yes --recursive $imageReferenceUsingDigest
+            }
+            finally {
+              # Clear registry credentials
+              Remove-Item -Path "Env:\COSIGN_REGISTRY_USERNAME" -ErrorAction SilentlyContinue
+              Remove-Item -Path "Env:\COSIGN_REGISTRY_PASSWORD" -ErrorAction SilentlyContinue
+            }
+
+            Write-Host "Testing image signature verification:"
+            cosign verify $imageReferenceUsingTag `
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" `
+              --certificate-identity "https://github.com/${env:GITHUB_WORKFLOW_REF}"
+
+            Write-Host "==== END ===="
+          }
+
+          $architectures = @(
+            'amd64',
+            'arm64'
+          )
+          $platformDigests = $architectures | ForEach-Object {
+            Push-SinglePlatformManifest -Architecture $_
+          }
+          $rootDigest = Push-MultiPlatformManifestIndex -PlatformDigests $platformDigests
+          #Sign-Image -Digest $rootDigest
+
+      - name: '[OCI] Push Plugin OCI Image'
+        shell: pwsh
+        env:
+          OCI_REGISTRY_USERNAME: ${{ github.actor }}
+          OCI_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          OCI_IMAGE_REPOSITORY: ${{ env.OCI_REGISTRY }}/${{ github.repository }}/${{ env.PLUGIN_OCI_IMAGE_NAME }}
+          PLUGIN_PACKAGE_FILE_NAME: ${{ steps.package-plugin.outputs.package-file-name }}
+        run: |
+          function Push-SinglePlatformManifest {
+            param(
+              [Parameter(Mandatory = $true)]
+              [ValidateSet('linux', 'windows', 'macos')]
+              [string]$OS,
+
+              [Parameter(Mandatory = $true)]
+              [ValidateSet('amd64', 'arm64')]
+              [string]$Architecture
+            )
+
+            $platformName = "${OS}-${Architecture}"
+            Write-Host "==== BEGIN: Pushing manifest for platform '${platformName}' ===="
+
+            $artifactPlatform = switch ($OS) {
+              'linux' {
+                switch ($Architecture) {
+                  'amd64' { 'linux/amd64' }
+                  'arm64' { 'linux/arm64' }
+                }
+              }
+              'windows' {
+                switch ($Architecture) {
+                  'amd64' { 'windows/amd64' }
+                  'arm64' { 'windows/arm64' }
+                }
+              }
+              'macos' {
+                switch ($Architecture) {
+                  'amd64' { 'darwin/amd64' }
+                  'arm64' { 'darwin/arm64' }
+                }
+              }
+            }
+
+            $pluginPackageDirectoryPath = Join-Path $env:RELEASE_PLUGIN_DIRECTORY_PATH $platformName $env:PLUGIN_PACKAGE_DIRECTORY_NAME
+            $pluginPackageFileName = $env:PLUGIN_PACKAGE_FILE_NAME
+
+            Push-Location $pluginPackageDirectoryPath
+            try {
+              $pushOutput = $env:OCI_REGISTRY_PASSWORD | oras push `
+                              --username $env:OCI_REGISTRY_USERNAME --password-stdin `
+                              $env:OCI_IMAGE_REPOSITORY `
+                              $pluginPackageFileName "${pluginPackageFileName}.prov" `
+                              --artifact-type "application/vnd.helm.plugin.v1+json" `
+                              --artifact-platform $artifactPlatform `
+                              --format go-template='{{.digest}}'
+
+              # Get the digest
+              $digest = $pushOutput.Trim()
+              if (-not $digest) {
+                Write-Host "ORAS output (for debugging):"
+                Write-Host $pushOutput
+                throw "Unable to determine pushed manifest digest for platform '${platformName}'"
+              }
+
+              Write-Host "Digest: '${digest}'"
+              Write-Host "==== END ===="
+              return $digest
+            }
+            finally {
+              Pop-Location
+            }
+          }
+
+          function Push-MultiPlatformManifestIndex {
+            param(
+              [Parameter(Mandatory = $true)]
+              [string[]]$PlatformDigests
+            )
+
+            $manifestRefs = $PlatformDigests | ForEach-Object {
+              $digest = $_
+              "${env:OCI_IMAGE_REPOSITORY}@${digest}"
+            }
+
+            Write-Host "==== BEGIN: Pushing manifest index for all platforms ===="
+
+            $createdTimestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            $pushOutput = $env:OCI_REGISTRY_PASSWORD | & oras manifest index create `
+                --username $env:OCI_REGISTRY_USERNAME --password-stdin `
+                "${env:OCI_IMAGE_REPOSITORY}:${env:RELEASE_VERSION}" `
+                --annotation "org.opencontainers.image.title=${env:OCI_IMAGE_ANNOTATIONS_TITLE}" `
+                --annotation "org.opencontainers.image.description=${env:PLUGIN_OCI_IMAGE_DESCRIPTION}" `
+                --annotation "org.opencontainers.image.created=${createdTimestamp}" `
+                --annotation "org.opencontainers.image.revision=${env:OCI_IMAGE_ANNOTATIONS_REVISION}" `
+                --annotation "org.opencontainers.image.version=${env:RELEASE_VERSION}" `
+                --annotation "org.opencontainers.image.authors=${env:OCI_IMAGE_ANNOTATIONS_AUTHORS}" `
+                --annotation "org.opencontainers.image.vendor=${env:OCI_IMAGE_ANNOTATIONS_VENDOR}" `
+                --annotation "org.opencontainers.image.licenses=${env:OCI_IMAGE_ANNOTATIONS_LICENSES}" `
+                --annotation "org.opencontainers.image.url=${env:OCI_IMAGE_ANNOTATIONS_URL}" `
+                --annotation "org.opencontainers.image.source=${env:OCI_IMAGE_ANNOTATIONS_SOURCE}" `
+                --annotation "org.opencontainers.image.documentation=${env:OCI_IMAGE_ANNOTATIONS_DOCUMENTATION}" `
+                @manifestRefs
+
+            # Get the digest
+            $digest = ($pushOutput | Select-String -Pattern 'Digest: (.+)' | Select-Object -Last 1).Matches.Groups[1].Value
+            if (-not $digest) {
+              Write-Host "ORAS output (for debugging):"
+              Write-Host $pushOutput
+              throw "Unable to determine pushed manifest index digest"
+            }
+
+            Write-Host "Digest: '${digest}'"
+            Write-Host "==== END ===="
+            return $digest
+          }
+
+          function Sign-Image {
+            param(
+              [Parameter(Mandatory = $true)]
+              [string]$Digest
+            )
+
+            $imageReferenceUsingDigest = "${env:OCI_IMAGE_REPOSITORY}@${Digest}"
+            $imageReferenceUsingTag = "${env:OCI_IMAGE_REPOSITORY}:${env:RELEASE_VERSION}"
+
+            Write-Host "==== BEGIN: Signing image '${imageReferenceUsingDigest}' ===="
+
+            Write-Host "Signing image:"
+            try {
+              # Set registry credentials
+              $env:COSIGN_REGISTRY_USERNAME = "${env:OCI_REGISTRY_USERNAME}"
+              $env:COSIGN_REGISTRY_PASSWORD = "${env:OCI_REGISTRY_PASSWORD}"
+
+              cosign sign --yes --recursive $imageReferenceUsingDigest
+            }
+            finally {
+              # Clear registry credentials
+              Remove-Item -Path "Env:\COSIGN_REGISTRY_USERNAME" -ErrorAction SilentlyContinue
+              Remove-Item -Path "Env:\COSIGN_REGISTRY_PASSWORD" -ErrorAction SilentlyContinue
+            }
+
+            Write-Host "Testing image signature verification:"
+            cosign verify $imageReferenceUsingTag `
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" `
+              --certificate-identity "https://github.com/${env:GITHUB_WORKFLOW_REF}"
+
+            Write-Host "==== END ===="
+          }
+
+          $platforms = @(
+            ('linux', 'amd64'),
+            ('linux', 'arm64'),
+            ('windows', 'amd64'),
+            ('windows', 'arm64'),
+            ('macos', 'amd64'),
+            ('macos', 'arm64')
+          )
+          $platformDigests = $platforms | ForEach-Object {
+            Push-SinglePlatformManifest -OS $_[0] -Architecture $_[1]
+          }
+          $rootDigest = Push-MultiPlatformManifestIndex -PlatformDigests $platformDigests
+          #Sign-Image -Digest $rootDigest
+
+      - name: '[GitHub] Create Release'
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create $env:RELEASE_TAG (Get-Item "${env:RELEASE_ASSETS_DIRECTORY_PATH}/*")
+
+      - name: '[OCI] Tag Images As "latest"'
+        shell: pwsh
+        env:
+          OCI_REGISTRY_USERNAME: ${{ github.actor }}
+          OCI_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          CLI_OCI_IMAGE_REPOSITORY: ${{ env.OCI_REGISTRY }}/${{ github.repository }}/${{ env.CLI_OCI_IMAGE_NAME }}
+          PLUGIN_OCI_IMAGE_REPOSITORY: ${{ env.OCI_REGISTRY }}/${{ github.repository }}/${{ env.PLUGIN_OCI_IMAGE_NAME }}
+        run: |
+          function Tag-Image {
+            param(
+              [Parameter(Mandatory = $true)]
+              [string]$ImageName
+            )
+
+            Write-Host "==== BEGIN: Tagging image '${ImageName}:${env:RELEASE_VERSION}' with 'latest' ===="
+
+            $env:OCI_REGISTRY_PASSWORD | oras tag `
+              --username $env:OCI_REGISTRY_USERNAME --password-stdin `
+              "${env:OCI_REGISTRY}/${env:GITHUB_REPOSITORY}/${ImageName}:${env:RELEASE_VERSION}" "latest"
+
+            Write-Host "==== END ===="
+          }
+
+          Tag-Image -ImageName $env:CLI_OCI_IMAGE_NAME
+          Tag-Image -ImageName $env:PLUGIN_OCI_IMAGE_NAME
+
+      - name: '[GitHub] Write Job Summary'
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_URL: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}
+          CLI_OCI_IMAGE_REPOSITORY: ${{ env.OCI_REGISTRY }}/${{ github.repository }}/${{ env.CLI_OCI_IMAGE_NAME }}
+          PLUGIN_OCI_IMAGE_REPOSITORY: ${{ env.OCI_REGISTRY }}/${{ github.repository }}/${{ env.PLUGIN_OCI_IMAGE_NAME }}
+        run: |
+          $summary = @"
+          ## Summary
+          ### GitHub Release
+          [$($env:RELEASE_TAG)]($($env:RELEASE_URL))
+          ### OCI Images
+          | Type | Image |
+          | --- | --- |
+          | **CLI** | `$($env:CLI_OCI_IMAGE_REPOSITORY):$($env:RELEASE_VERSION)` |
+          | **Plugin** | `$($env:PLUGIN_OCI_IMAGE_REPOSITORY):$($env:RELEASE_VERSION)` |
+          "@
+          $summary | Out-File -Append -FilePath $env:GITHUB_STEP_SUMMARY

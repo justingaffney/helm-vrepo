@@ -1,0 +1,38 @@
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: helm-vrepo-generator
+spec:
+  schedule: 0 0 * * * # Once per day
+  concurrencyPolicy: Forbid # Only one update at a time
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            fsGroup: 1654 # Might be required to write the generated file to the volume
+          containers:
+            - name: main
+              image: ghcr.io/justingaffney/helm-vrepo/helm-vrepo-cli:latest
+              args:
+                - gen
+                - -c
+                - /helm-vrepo/config.yaml
+                - -o
+                - /helm-vrepo/generated-index/index.yaml
+                - --overwrite
+              volumeMounts:
+                - name: config
+                  subPath: vrepo.yaml
+                  mountPath: /helm-vrepo/config.yaml
+                - name: data
+                  mountPath: /helm-vrepo/generated-index
+          volumes:
+            - name: config
+              configMap:
+                name: helm-vrepo-config
+            - name: data
+              persistentVolumeClaim:
+                claimName: helm-vrepo-data

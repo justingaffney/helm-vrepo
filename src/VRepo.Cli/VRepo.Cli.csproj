@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>helm-vrepo</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <RuntimeIdentifiers>
+      linux-x64;linux-arm64;
+      win-x64;win-arm64;
+      osx-x64;osx-arm64;
+    </RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DotMake.CommandLine" />
+    <!-- TODO Delete once .NET 11 reaches GA status -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../VRepo.Configuration/VRepo.Configuration.csproj" />
+    <ProjectReference Include="../VRepo.Engine/VRepo.Engine.csproj" />
+    <ProjectReference Include="../VRepo.Helm.Sources.Http/VRepo.Helm.Sources.Http.csproj" />
+    <ProjectReference Include="../VRepo.Helm.Sources.Oci/VRepo.Helm.Sources.Oci.csproj" />
+  </ItemGroup>
+
+</Project>

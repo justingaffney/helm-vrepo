@@ -1,0 +1,22 @@
+apiVersion: v1
+type: cli/v1
+name: helm-vrepo
+version: PLACEHOLDER_REPLACED_BY_CICD_DURING_PACKAGING
+runtime: subprocess
+sourceURL: https://github.com/justingaffney/helm-vrepo
+
+config:
+  usage: vrepo [command]
+  ignoreFlags: false
+  shortHelp: Helm repository virtualization
+  longHelp: |
+    This plugin allows building virtual Helm repositories by aggregating charts from multiple upstream repositories (HTTP, OCI, or manual sources), and optionally filtering the chart versions using configurable policies.
+
+    Some examples of when this can be useful are:
+      - Consolidating charts from multiple repositories into a single unified repository index
+      - Applying consistent version policies across charts (e.g. exclude prerelease versions or invalid SemVer versions)
+      - Using SemVer ranges and regex patterns to fine-tune which chart versions are included
+
+runtimeConfig:
+  platformCommand:
+    - command: ${HELM_PLUGIN_DIR}/bin/helm-vrepo

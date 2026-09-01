@@ -1,0 +1,20 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  # TODO Uncomment once .NET 11 reaches GA status
+  #- package-ecosystem: nuget
+  #  directory: /
+  #  schedule:
+  #    interval: weekly
+  #  groups:
+  #    dotnet:
+  #      patterns:
+  #        - "*"

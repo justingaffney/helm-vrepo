@@ -1,0 +1,42 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helm-vrepo-server
+  labels:
+    app.kubernetes.io/name: helm-vrepo-server
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: helm-vrepo-server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: helm-vrepo-server
+    spec:
+      containers:
+        - name: main
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: helm-vrepo-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: helm-vrepo-server
+  labels:
+    app.kubernetes.io/name: helm-vrepo-server
+spec:
+  selector:
+    app.kubernetes.io/name: helm-vrepo-server
+  ports:
+    - port: 80

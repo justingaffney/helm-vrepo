@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://github.com/justingaffney/helm-vrepo/releases/latest/download/config-schema.json
+apiVersion: v1alpha1
+
+upstream:
+  versionPolicy:
+    exclude:
+      invalidSemVer: true
+      prerelease: true
+
+  repositories:
+    - url: https://charts.example.com
+      charts:
+        my-chart: {}
+        another-chart: {}
+
+    - url: oci://registry.example.com/charts
+      versionPolicy:
+        exclude:
+          prerelease: false
+      charts:
+        oci-chart:
+          versionPolicy:
+            exclude:
+              versions:
+                - "<1.5.0"
+                - "^(?!stable-).*$"
+
+manualRepository:
+  entries:
+    custom-chart:
+      - name: custom-chart
+        version: "1.0.0"
+        appVersion: "v1.0.0"
+        description: "A custom chart"
+        urls:
+          - "https://example.com/charts/custom-chart-1.0.0.tar.gz"

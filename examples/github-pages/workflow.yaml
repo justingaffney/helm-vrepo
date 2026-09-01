@@ -1,0 +1,69 @@
+# Installs the latest version of the `helm-vrepo` Helm plugin, generates a virtual
+# repository index file from the configuration file, and uploads it to GitHub Pages
+name: Update Index
+
+on:
+  # Update when configuration changes
+  push:
+    branches:
+      - main
+
+  # Update once per day
+  schedule:
+    - cron: 0 0 * * *
+
+  # Update on demand
+  workflow_dispatch:
+
+# Only one update at a time, new runs cancel in progress updates
+concurrency:
+  group: update-index
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  run:
+    if: github.ref_name == 'main' # Only allow this job to run on the main branch
+    name: Update Index
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Helm
+        uses: azure/setup-helm@v5
+        with:
+          version: v4.2.0
+
+      - name: Install 'helm-vrepo' Plugin
+        run: |
+          # Import the plugin's public GPG key, for signature verification
+          curl -SsL https://github.com/justingaffney/helm-vrepo/raw/refs/heads/main/public-key.asc | gpg --import
+          gpg --export > ~/.gnupg/pubring.gpg
+
+          # Install the plugin
+          helm plugin install oci://ghcr.io/justingaffney/helm-vrepo/helm-vrepo-plugin:latest
+
+      - name: Generate Index File
+        run: |
+          mkdir public
+          helm vrepo gen -c vrepo.yaml -o public/index.yaml
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload GitHub Pages Artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: public
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

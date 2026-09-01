@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\VRepo.Common.Versioning\VRepo.Common.Versioning.csproj" />
+    <ProjectReference Include="..\VRepo.Helm.Specification\VRepo.Helm.Specification.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="VRepo.Configuration.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="OrasProject.Oras" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../VRepo.Helm.Specification/VRepo.Helm.Specification.csproj" />
+  </ItemGroup>
+
+</Project>

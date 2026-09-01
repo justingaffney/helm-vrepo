@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="JsonSchema.Net.Generation" />
+    <PackageReference Include="JsonSchema.Net.Generation.DataAnnotations" />
+    <PackageReference Include="YamlDotNet" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="VRepo.Common.Tests" />
+  </ItemGroup>
+
+</Project>

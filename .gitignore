@@ -1,0 +1,5 @@
+# Build output
+/artifacts
+
+# Test results
+/TestResults

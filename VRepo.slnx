@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/VRepo.Cli/VRepo.Cli.csproj" />
+    <Project Path="src/VRepo.Common.Serialization/VRepo.Common.Serialization.csproj" />
+    <Project Path="src/VRepo.Common.Versioning/VRepo.Common.Versioning.csproj" />
+    <Project Path="src/VRepo.Configuration/VRepo.Configuration.csproj" />
+    <Project Path="src/VRepo.Engine/VRepo.Engine.csproj" />
+    <Project Path="src/VRepo.Helm.Sources.Http/VRepo.Helm.Sources.Http.csproj" />
+    <Project Path="src/VRepo.Helm.Sources.Oci/VRepo.Helm.Sources.Oci.csproj" />
+    <Project Path="src/VRepo.Helm.Specification/VRepo.Helm.Specification.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/VRepo.Common.Tests/VRepo.Common.Tests.csproj" />
+    <Project Path="tests/VRepo.Configuration.Tests/VRepo.Configuration.Tests.csproj" />
+    <Project Path="tests/VRepo.Engine.Tests/VRepo.Engine.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="../VRepo.Configuration/VRepo.Configuration.csproj" />
+    <ProjectReference Include="../VRepo.Helm.Sources.Http/VRepo.Helm.Sources.Http.csproj" />
+    <ProjectReference Include="../VRepo.Helm.Sources.Oci/VRepo.Helm.Sources.Oci.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="VRepo.Engine.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "VRepo.Cli": {
+      "commandName": "Project",
+      "workingDirectory": "../..",
+      "commandLineArgs": "@src/VRepo.Cli/debug.rsp"
+    }
+  }
+}
