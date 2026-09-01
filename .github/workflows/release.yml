@@ -233,7 +233,7 @@ jobs:
           # Hash files
           $lines = foreach ($file in $files) {
             $hash = (Get-FileHash -Path $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-            "$hash  $($file.Name)"
+            "${hash}  ${file.Name}"
           }
 
           # Write hashes to checksum file
@@ -755,11 +755,11 @@ jobs:
           $summary = @"
           ## Summary
           ### GitHub Release
-          [$($env:RELEASE_TAG)]($($env:RELEASE_URL))
+          [${env:RELEASE_TAG}](${env:RELEASE_URL})
           ### OCI Images
           | Type | Image |
           | --- | --- |
-          | **CLI** | `$($env:CLI_OCI_IMAGE_REPOSITORY):$($env:RELEASE_VERSION)` |
-          | **Plugin** | `$($env:PLUGIN_OCI_IMAGE_REPOSITORY):$($env:RELEASE_VERSION)` |
+          | **CLI** | ``${env:CLI_OCI_IMAGE_REPOSITORY}:${env:RELEASE_VERSION}`` |
+          | **Plugin** | ``${env:PLUGIN_OCI_IMAGE_REPOSITORY}:${env:RELEASE_VERSION}`` |
           "@
           $summary | Out-File -Append -FilePath $env:GITHUB_STEP_SUMMARY
