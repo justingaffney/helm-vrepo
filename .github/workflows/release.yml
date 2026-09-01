@@ -1,9 +1,9 @@
 name: Create Release
 run-name: 'Creating Release: ${{ github.ref_name }}'
 
-# Ensure this can only run once per tag
+# Ensure this can only run once
 concurrency:
-  group: create-release_-${{ github.ref_name }}
+  group: create-release
   cancel-in-progress: false
 
 on:
@@ -62,14 +62,90 @@ jobs:
         shell: pwsh
         run: New-Item -ItemType Directory -Force -Path $env:RELEASE_ASSETS_DIRECTORY_PATH | Out-Null
 
-      - name: '[GitHub] Format Release Version'
+      - name: '[GitHub] Check Version'
         shell: pwsh
         run: |
-          # Remove 'v' prefix
-          $releaseVersion = $env:GITHUB_REF_NAME.Substring(1)
+          function Get-StableVersion {
+            param(
+              [Parameter(Mandatory = $true)]
+              [string]$TagName
+            )
+
+            if ($TagName -notmatch '^[vV]?(\d+)\.(\d+)\.(\d+)$') {
+              return $null
+            }
+
+            return [System.Version]::new($Matches[1], $Matches[2], $Matches[3])
+          }
+
+          function Is-LatestStableVersion {
+            param(
+              [Parameter(Mandatory = $true)]
+              [string]$TagName
+            )
+
+            $currentVersion = Get-StableVersion -TagName $TagName
+            if ($null -eq $currentVersion) {
+              Write-Host "Tag '${TagName}' is not a stable release; it will not be marked as latest."
+              return $false
+            }
+
+            $releaseListJson = gh release list --limit 100 --exclude-drafts --exclude-pre-releases --json tagName 2>$null
+            if (-not $releaseListJson -or $releaseListJson.Trim() -eq '[]') {
+              Write-Host "No prior stable releases found; '${TagName}' is the latest stable release."
+              return $true
+            }
+
+            $stableReleases = $releaseListJson | ConvertFrom-Json
+            $latestStableVersion = $null
+            $latestStableTagName = $null
+
+            foreach ($release in $stableReleases) {
+              $candidateVersion = Get-StableVersion -TagName $release.tagName
+              if ($null -eq $candidateVersion) {
+                continue
+              }
+
+              if ($null -eq $latestStableVersion -or $candidateVersion -gt $latestStableVersion) {
+                $latestStableVersion = $candidateVersion
+                $latestStableTagName = $release.tagName
+              }
+            }
+
+            if ($null -eq $latestStableTagName) {
+              Write-Host "No valid stable releases found; '${TagName}' is treated as the latest stable release."
+              return $true
+            }
+
+            $isLatest = $latestStableTagName -eq $TagName
+            if ($isLatest) {
+              Write-Host "Tag '${TagName}' is the latest stable release."
+            } else {
+              Write-Host "Tag '${TagName}' is not the latest stable release; the newest stable tag is '${latestStableTagName}'."
+            }
+
+            return $isLatest
+          }
+
+          $releaseVersion = $env:GITHUB_REF_NAME.Substring(1) # Remove 'v' prefix
+          $isStableVersion = $env:GITHUB_REF_NAME -match '^[vV]?\d+\.\d+\.\d+$'
+          $isPrereleaseVersion = -not $isStableVersion
+          $isLatestStableVersion = Is-LatestStableVersion -TagName $env:GITHUB_REF_NAME
+
+          if ($isStableVersion) {
+            Write-Host "Tag '${env:GITHUB_REF_NAME}' is a stable version."
+            if ($isLatestStableVersion) {
+              Write-Host "Tag '${env:GITHUB_REF_NAME}' is the latest stable version."
+            }
+          } else {
+            Write-Host "Tag '${env:GITHUB_REF_NAME}' is a prerelease version."
+          }
 
           # Write to job environment variables
           Add-Content -Path $env:GITHUB_ENV -Value "RELEASE_VERSION=$releaseVersion"
+          Add-Content -Path $env:GITHUB_ENV -Value "RELEASE_VERSION_IS_STABLE=$($isStableVersion.ToString().ToLowerInvariant())"
+          Add-Content -Path $env:GITHUB_ENV -Value "RELEASE_VERSION_IS_PRERELEASE=$($isPrereleaseVersion.ToString().ToLowerInvariant())"
+          Add-Content -Path $env:GITHUB_ENV -Value "RELEASE_VERSION_IS_LATEST_STABLE=$($isLatestStableVersion.ToString().ToLowerInvariant())"
 
       - name: '[SBOM] Install Syft'
         uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
@@ -716,9 +792,21 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.ref_name }}
-        run: gh release create $env:RELEASE_TAG (Get-Item "${env:RELEASE_ASSETS_DIRECTORY_PATH}/*")
+        run: |
+          $ghArgs = @()
+          if ($env:RELEASE_VERSION_IS_PRERELEASE -eq 'true') {
+            $ghArgs += '--prerelease'
+          } elseif ($env:RELEASE_VERSION_IS_LATEST_STABLE -eq 'true') {
+            $ghArgs += '--latest'
+          } elseif ($env:RELEASE_VERSION_IS_STABLE -eq 'true') {
+            $ghArgs += '--latest=false'
+          }
+
+          $releaseAssets = @(Get-Item "${env:RELEASE_ASSETS_DIRECTORY_PATH}/*")
+          & gh release create $env:RELEASE_TAG @ghArgs @releaseAssets
 
       - name: '[OCI] Tag Images As "latest"'
+        if: env.RELEASE_VERSION_IS_LATEST_STABLE == 'true'
         shell: pwsh
         env:
           OCI_REGISTRY_USERNAME: ${{ github.actor }}
