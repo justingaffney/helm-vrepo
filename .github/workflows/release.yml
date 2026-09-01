@@ -78,6 +78,15 @@ jobs:
             return [System.Version]::new($Matches[1], $Matches[2], $Matches[3])
           }
 
+          function Is-StableVersion {
+            param(
+              [Parameter(Mandatory = $true)]
+              [string]$TagName
+            )
+
+            return $null -ne (Get-StableVersion -TagName $TagName)
+          }
+
           function Is-LatestStableVersion {
             param(
               [Parameter(Mandatory = $true)]
@@ -124,8 +133,7 @@ jobs:
           }
 
           $releaseVersion = $env:GITHUB_REF_NAME.Substring(1) # Remove 'v' prefix
-          $isStableVersion = $env:GITHUB_REF_NAME -match '^[vV]?\d+\.\d+\.\d+$'
-          $isPrereleaseVersion = -not $isStableVersion
+          $isStableVersion = Is-StableVersion -TagName $env:GITHUB_REF_NAME
           $isLatestStableVersion = Is-LatestStableVersion -TagName $env:GITHUB_REF_NAME
 
           if ($isStableVersion) {
@@ -140,7 +148,6 @@ jobs:
           # Write to job environment variables
           Add-Content -Path $env:GITHUB_ENV -Value "RELEASE_VERSION=$releaseVersion"
           Add-Content -Path $env:GITHUB_ENV -Value "RELEASE_VERSION_IS_STABLE=$($isStableVersion.ToString().ToLowerInvariant())"
-          Add-Content -Path $env:GITHUB_ENV -Value "RELEASE_VERSION_IS_PRERELEASE=$($isPrereleaseVersion.ToString().ToLowerInvariant())"
           Add-Content -Path $env:GITHUB_ENV -Value "RELEASE_VERSION_IS_LATEST_STABLE=$($isLatestStableVersion.ToString().ToLowerInvariant())"
 
       - name: '[SBOM] Install Syft'
@@ -789,17 +796,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          $ghArgs = @()
-          if ($env:RELEASE_VERSION_IS_PRERELEASE -eq 'true') {
-            $ghArgs += '--prerelease'
-          } elseif ($env:RELEASE_VERSION_IS_LATEST_STABLE -eq 'true') {
-            $ghArgs += '--latest'
+          if ($env:RELEASE_VERSION_IS_LATEST_STABLE -eq 'true') {
+            $statusFlag = '--latest'
           } elseif ($env:RELEASE_VERSION_IS_STABLE -eq 'true') {
-            $ghArgs += '--latest=false'
+            $statusFlag = '--latest=false'
+          } else {
+            $statusFlag = '--prerelease'
           }
 
           $releaseAssets = @(Get-Item "${env:RELEASE_ASSETS_DIRECTORY_PATH}/*")
-          & gh release create $env:RELEASE_TAG @ghArgs @releaseAssets
+          & gh release create $env:RELEASE_TAG $statusFlag @releaseAssets
 
       - name: '[OCI] Tag Images As "latest"'
         if: env.RELEASE_VERSION_IS_LATEST_STABLE == 'true'
