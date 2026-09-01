@@ -67,13 +67,25 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          function Validate-SemVer {
+            param(
+              [Parameter(Mandatory = $true)]
+              [string]$Version
+            )
+
+            if ($Version -notmatch '^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$') {
+              throw "Version '${Version}' is not valid SemVer 2.0."
+            }
+          }
+
           function Get-StableVersion {
             param(
               [Parameter(Mandatory = $true)]
               [string]$TagName
             )
 
-            if ($TagName -notmatch '^[vV]?(\d+)\.(\d+)\.(\d+)$') {
+            $normalizedTagName = $TagName.TrimStart('v')
+            if ($normalizedTagName -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
               return $null
             }
 
@@ -134,18 +146,23 @@ jobs:
             return $isLatest
           }
 
-          $releaseVersion = $env:GITHUB_REF_NAME.Substring(1) # Remove 'v' prefix
-          $isStableVersion = Is-StableVersion -TagName $env:GITHUB_REF_NAME
-          $isLatestStableVersion = Is-LatestStableVersion -TagName $env:GITHUB_REF_NAME
+          $tagName = $env:GITHUB_REF_NAME
+
+          Validate-SemVer -Version $tagName
+
+          $isStableVersion = Is-StableVersion -TagName $tagName
+          $isLatestStableVersion = Is-LatestStableVersion -TagName $tagName
 
           if ($isStableVersion) {
-            Write-Host "Tag '${env:GITHUB_REF_NAME}' is a stable version."
+            Write-Host "Tag '${tagName}' is a stable version."
             if ($isLatestStableVersion) {
-              Write-Host "Tag '${env:GITHUB_REF_NAME}' is the latest stable version."
+              Write-Host "Tag '${tagName}' is the latest stable version."
             }
           } else {
-            Write-Host "Tag '${env:GITHUB_REF_NAME}' is a prerelease version."
+            Write-Host "Tag '${tagName}' is a prerelease version."
           }
+
+          $releaseVersion = $tagName.Substring(1) # Remove 'v' prefix
 
           # Write to job environment variables
           Add-Content -Path $env:GITHUB_ENV -Value "RELEASE_VERSION=$releaseVersion"
