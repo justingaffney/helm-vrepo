@@ -86,13 +86,12 @@ jobs:
 
             $currentVersion = Get-StableVersion -TagName $TagName
             if ($null -eq $currentVersion) {
-              Write-Host "Tag '${TagName}' is not a stable release; it will not be marked as latest."
               return $false
             }
 
             $releaseListJson = gh release list --limit 100 --exclude-drafts --exclude-pre-releases --json tagName 2>$null
             if (-not $releaseListJson -or $releaseListJson.Trim() -eq '[]') {
-              Write-Host "No prior stable releases found; '${TagName}' is the latest stable release."
+              Write-Host "No prior stable releases found."
               return $true
             }
 
@@ -113,16 +112,13 @@ jobs:
             }
 
             if ($null -eq $latestStableTagName) {
-              Write-Host "No valid stable releases found; '${TagName}' is treated as the latest stable release."
+              Write-Host "No valid stable releases found."
               return $true
             }
 
+            Write-Host "The latest stable tag is '${latestStableTagName}'."
+
             $isLatest = $latestStableTagName -eq $TagName
-            if ($isLatest) {
-              Write-Host "Tag '${TagName}' is the latest stable release."
-            } else {
-              Write-Host "Tag '${TagName}' is not the latest stable release; the newest stable tag is '${latestStableTagName}'."
-            }
 
             return $isLatest
           }
