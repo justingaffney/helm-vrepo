@@ -47,7 +47,7 @@ helm vrepo
 
 ### Uninstall
 ```bash
-helm plugin uninstall vrepo
+helm plugin uninstall helm-vrepo
 ```
 
 ### Update
