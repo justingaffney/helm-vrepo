@@ -120,7 +120,6 @@ jobs:
 
             $stableReleases = $releaseListJson | ConvertFrom-Json
             $latestStableVersion = $null
-            $latestStableTagName = $null
 
             foreach ($release in $stableReleases) {
               $candidateVersion = Get-StableVersion -TagName $release.tagName
@@ -130,19 +129,15 @@ jobs:
 
               if ($null -eq $latestStableVersion -or $candidateVersion -gt $latestStableVersion) {
                 $latestStableVersion = $candidateVersion
-                $latestStableTagName = $release.tagName
               }
             }
 
-            if ($null -eq $latestStableTagName) {
+            if ($null -eq $latestStableVersion) {
               Write-Host "No valid stable releases found."
               return $true
             }
 
-            Write-Host "The latest stable tag is '${latestStableTagName}'."
-
-            $isLatest = $latestStableTagName -eq $TagName
-
+            $isLatest = $currentVersion -gt $latestStableVersion
             return $isLatest
           }
 
