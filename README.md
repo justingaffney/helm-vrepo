@@ -12,38 +12,35 @@
   - Test new chart versions by creating multiple virtual repositories with different version policies. For example a testing repository could be created that allows prerelease versions, but is limited to a small set of charts and versions
 
 ## Installation
+> [!IMPORTANT]
+> Requires Helm 4.3.0+. Earlier Helm versions are not supported, plugin installations will fail.
+
 > [!WARNING]
-> Helm currently has one [bug](https://github.com/helm/helm/issues/32247) preventing installation of plugin OCI images in versions `4.2.1`-`4.2.4`, and another [bug](https://github.com/helm/helm/issues/32541) (with a [PR](https://github.com/helm/helm/pull/32548) open to fix it) preventing installation of multi-architecture plugin OCI images in all 4.x versions. So (at the time of writing this) the multi-architecture `helm-vrepo` plugin's OCI image cannot be installed on any Helm 4 versions, and the install command `helm plugin install oci://...` documented below will fail. 
+> Helm currently has one [bug](https://github.com/helm/helm/issues/32541) (with a [PR](https://github.com/helm/helm/pull/32548) open to fix it) affecting all 4.x versions, that prevents installation of plugins from multi-architecture OCI images. So (at the time of writing this) the multi-architecture `helm-vrepo` plugin's OCI image cannot be installed on any Helm 4 versions, and the install command `helm plugin install oci://...` documented below will fail. 
 >
-> The current workaround is to install version `4.2.0` of Helm and directly install the plugin's single-architecture OCI image that matches the architecture of the system where the plugin is being installed (can be found in the `OS / Arch` tab in https://github.com/justingaffney/helm-vrepo/pkgs/container/helm-vrepo%2Fhelm-vrepo-plugin).
+> The current workaround is to directly install the plugin's single-architecture OCI image that matches the architecture of the system where the plugin is being installed (can be found in the `OS / Arch` tab in https://github.com/justingaffney/helm-vrepo/pkgs/container/helm-vrepo%2Fhelm-vrepo-plugin).
 
 ### Set up GPG public key for signature verification
 > Helm verifies plugins by default during installation. Verification can be disabled by including `--verify=false` in the installation command, and this step can be skipped (_**not recommended**_).
 
 #### Import the GPG public key
-```
-# Import the public key
+```bash
 curl -SsL https://github.com/justingaffney/helm-vrepo/raw/refs/heads/main/public-key.asc | gpg --import
+```
 
-# Check fingerprint (expected fingerprint: E6E5 F0F4 D783 63B0 3009  2C03 91EC EDE2 3C1F 5E78)
+#### (*Optional)* Verify the fingerprint
+> Expected fingerprint: `E6E5 F0F4 D783 63B0 3009  2C03 91EC EDE2 3C1F 5E78`
+```bash
 gpg --list-keys --with-fingerprint 91ECEDE23C1F5E78
-
-# Convert your keyring from the new keybox (.kbx) format to the
-# legacy binary keyring (.gpg) format, so Helm can read it.
-# See https://helm.sh/docs/topics/provenance
-gpg --export > ~/.gnupg/pubring.gpg
 ```
 
 ### Install
 ```bash
-helm plugin install oci://ghcr.io/justingaffney/helm-vrepo/helm-vrepo-plugin:X.Y.Z
+helm plugin install oci://ghcr.io/justingaffney/helm-vrepo/helm-vrepo-plugin:latest
 ```
-Replace `X.Y.Z` in the examples with the version you want to install (e.g. `1.2.3`) or `latest` for the latest available version. All available versions can be found in the [GitHub Releases](https://github.com/justingaffney/helm-vrepo/releases).
 
-### Confirm installation succeeded
-```bash
-helm vrepo
-```
+> [!IMPORTANT]
+> By default Helm looks for the GPG keyring file at `~/.gnupg/pubring.kbx`, but on Windows the GPG keyring file is at `%APPDATA%/gnupg/pubring.kbx`. The correct file path must be specified using the `--keyring` option.
 
 ### Uninstall
 ```bash
@@ -51,10 +48,10 @@ helm plugin uninstall helm-vrepo
 ```
 
 ### Update
-To update the plugin, just uninstall it and then reinstall with the new version.
+Just uninstall and then reinstall with the new version.
 
 ### (*Alternative*) Install as a standalone CLI tool
-The Helm plugin binary is just a regular CLI application, and can alternatively be downloaded directly from [GitHub Releases](https://github.com/justingaffney/helm-vrepo/releases) and run as a standalone CLI tool (using `helm-vrepo` instead of `helm vrepo`).
+The Helm plugin binary is just a regular CLI application, and can alternatively be downloaded directly from [GitHub Releases](../../releases) and run as a standalone CLI tool (using `helm-vrepo` instead of `helm vrepo`).
 
 ## Quick Start
 
