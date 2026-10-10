@@ -1,3 +1,4 @@
+using System.Security.Authentication;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -26,13 +27,20 @@ internal sealed class OciChartProvider(
     {
         var client = clientFactory.Create(reference);
 
-        var versions = new List<string>();
-        await foreach (var tag in client.ListTagsAsync(cancellationToken: cancellationToken))
+        try
         {
-            versions.Add(tag);
-        }
+            var versions = new List<string>();
+            await foreach (var tag in client.ListTagsAsync(cancellationToken: cancellationToken))
+            {
+                versions.Add(tag);
+            }
 
-        return versions;
+            return versions;
+        }
+        catch (AuthenticationException exception)
+        {
+            throw new OciChartRetrievalException($"Version tag retrieval failed with authentication error: \"{exception.Message}\".", exception);
+        }
     }
 
     public async Task<RepositoryChartMetadata> GetChart(OciChartVersionReference reference, CancellationToken cancellationToken = default)
@@ -41,7 +49,18 @@ internal sealed class OciChartProvider(
 
         var client = clientFactory.Create(reference.Chart);
 
-        var (manifestDescriptor, manifestStream) = await client.FetchAsync(reference.Version.ToString(), cancellationToken);
+        Descriptor manifestDescriptor;
+        Stream manifestStream;
+        try
+        {
+            var fetchedManifest = await client.FetchAsync(reference.Version.ToString(), cancellationToken);
+            manifestDescriptor = fetchedManifest.Descriptor;
+            manifestStream = fetchedManifest.Stream;
+        }
+        catch (AuthenticationException exception)
+        {
+            throw new OciChartRetrievalException($"Manifest retrieval failed with authentication error: \"{exception.Message}\".", exception);
+        }
 
         if (!string.Equals(manifestDescriptor.MediaType, MediaType.ImageManifest, StringComparison.OrdinalIgnoreCase))
         {
