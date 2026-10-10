@@ -13,12 +13,12 @@
 
 ## Installation
 > [!IMPORTANT]
-> Requires Helm 4.3.0+. Earlier Helm versions are not supported, plugin installations will fail.
+> Requires Helm 4.3.0+. Earlier Helm versions are not supported, plugin installation will fail.
 
 > [!WARNING]
-> Helm currently has one [bug](https://github.com/helm/helm/issues/32541) (with a [PR](https://github.com/helm/helm/pull/32548) open to fix it) affecting all 4.x versions, that prevents installation of plugins from multi-architecture OCI images. So (at the time of writing this) the multi-architecture `helm-vrepo` plugin's OCI image cannot be installed on any Helm 4 versions, and the install command `helm plugin install oci://...` documented below will fail. 
+> Helm currently has one bug (with a [PR](https://github.com/helm/helm/pull/32734) open to fix it) affecting all 4.x versions, that prevents installation of plugins from multi-platform OCI images. So (at the time of writing this) the multi-platform `helm-vrepo` plugin's OCI image cannot be installed on any Helm 4 versions, and the install command `helm plugin install oci://...` documented below will fail. 
 >
-> The current workaround is to directly install the plugin's single-architecture OCI image that matches the architecture of the system where the plugin is being installed (can be found in the `OS / Arch` tab in https://github.com/justingaffney/helm-vrepo/pkgs/container/helm-vrepo%2Fhelm-vrepo-plugin).
+> The current workaround is to directly install the plugin's single-platform OCI image that matches the platform of the system where the plugin is being installed (can be found in the `OS / Arch` tab in https://github.com/justingaffney/helm-vrepo/pkgs/container/helm-vrepo%2Fhelm-vrepo-plugin).
 
 ### Set up GPG public key for signature verification
 > Helm verifies plugins by default during installation. Verification can be disabled by including `--verify=false` in the installation command, and this step can be skipped (_**not recommended**_).
