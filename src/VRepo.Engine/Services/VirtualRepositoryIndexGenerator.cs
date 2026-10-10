@@ -149,7 +149,7 @@ internal sealed class VirtualRepositoryIndexGenerator(
             try
             {
                 logger.LogInformation("Retrieving versions for OCI chart \"{ChartName}\" in repository (URL: \"{RepositoryUrl}\").", chart.Name, repository.Url);
-                chartVersionTags = await ociChartProvider.GetVersionTags(chartReference, cancellationToken);
+                chartVersionTags = await ociChartProvider.GetVersionTags(chartReference, repository.ClientOptions, cancellationToken);
             }
             catch (OciChartRetrievalException exception)
             {
@@ -166,7 +166,7 @@ internal sealed class VirtualRepositoryIndexGenerator(
                 try
                 {
                     logger.LogInformation("Retrieving OCI chart \"{ChartName}\" version \"{ChartVersion}\" in repository (URL: \"{RepositoryUrl}\").", chart.Name, chartVersionTag, repository.Url);
-                    chartVersion = await ociChartProvider.GetChart(new OciChartVersionReference(chartReference, chartVersionTag), cancellationToken);
+                    chartVersion = await ociChartProvider.GetChart(new OciChartVersionReference(chartReference, chartVersionTag), repository.ClientOptions, cancellationToken);
                 }
                 catch (OciChartRetrievalException exception)
                 {

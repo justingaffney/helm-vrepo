@@ -159,6 +159,11 @@ internal sealed class VirtualRepositoryReader(
                         {
                             builder.AddUpstreamOciRepository(url, repositoryBuilder =>
                             {
+                                if (!string.IsNullOrWhiteSpace(repository.OciRepository?.AuthenticationRealmHostname))
+                                {
+                                    repositoryBuilder.SetAuthenticationRealmHostname(repository.OciRepository.AuthenticationRealmHostname);
+                                }
+
                                 foreach (var chart in charts)
                                 {
                                     repositoryBuilder.AddChart(chart);

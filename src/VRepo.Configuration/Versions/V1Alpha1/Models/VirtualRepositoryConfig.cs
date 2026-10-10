@@ -122,6 +122,11 @@ public sealed class VirtualRepositoryConfig : ApiVersionable, IConfigurationRoot
         [Description("The remote Helm repository URL. \"https://\" or \"http://\" for HTTP repositories, \"oci://\" for OCI repositories.")]
         public required RemoteRepositoryReference Url { get; init; }
 
+        [YamlMember(Alias = "oci")]
+        [YamlExampleComment("OCI repository configuration.")]
+        [Description("The OCI repository configuration.")]
+        public OciRepositoryConfig? OciRepository { get; init; }
+
         [YamlMember(Alias = "versionPolicy")]
         [YamlExampleComment("Version policy applied to all charts in this repository.\nThese settings override any settings in the global policy.")]
         [Description("The policy applied to all charts in this repository for filtering versions. These settings override any settings in the global policy.")]
@@ -131,7 +136,15 @@ public sealed class VirtualRepositoryConfig : ApiVersionable, IConfigurationRoot
         [Description("The charts to include.")]
         public required IReadOnlyDictionary<string, ChartConfig> Charts { get; init; }
 
-        public class ChartConfig
+        public sealed class OciRepositoryConfig
+        {
+            [YamlMember(Alias = "authenticationRealmHostname")]
+            [YamlExampleComment("Authentication realm hostname for the OCI repository.\nThis is only required for OCI registries with different authentication realm hostnames.")]
+            [Description("The authentication realm hostname for the OCI repository. This is only required for OCI registries with different authentication realm hostnames.")]
+            public string? AuthenticationRealmHostname { get; init; }
+        }
+
+        public sealed class ChartConfig
         {
             [YamlMember(Alias = "versionPolicy")]
             [YamlExampleComment("Version policy applied to all versions of this chart.\nThese settings override any repository or global settings.")]
@@ -191,7 +204,7 @@ public sealed class VirtualRepositoryConfig : ApiVersionable, IConfigurationRoot
                                 }
                             }
                         },
-                        ["oci-chart-advanced-include-invalid-semver-versions"] = new()
+                        ["http-chart-advanced-include-invalid-semver-versions"] = new()
                         {
                             VersionPolicy = new()
                             {
@@ -224,6 +237,10 @@ public sealed class VirtualRepositoryConfig : ApiVersionable, IConfigurationRoot
                 new()
                 {
                     Url = new OciUrlRepository("oci://registry.example.com/advanced-example-repository/charts"),
+                    OciRepository = new()
+                    {
+                        AuthenticationRealmHostname = "auth.registry.example.com"
+                    },
                     Charts = new Dictionary<string, UpstreamRepositoryConfig.ChartConfig>()
                     {
                         ["oci-chart-advanced-include-single-version-only"] = new()

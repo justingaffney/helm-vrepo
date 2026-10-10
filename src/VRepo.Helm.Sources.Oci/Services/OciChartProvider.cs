@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using OrasProject.Oras.Content;
 using OrasProject.Oras.Oci;
 using VRepo.Helm.Sources.Oci.Exceptions;
+using VRepo.Helm.Sources.Oci.Models;
 using VRepo.Helm.Specification.Models.Charts;
 using VRepo.Helm.Specification.Models.Charts.Oci;
 using VRepo.Helm.Specification.Models.Repositories;
@@ -13,9 +14,9 @@ namespace VRepo.Helm.Sources.Oci.Services;
 
 public interface IOciChartProvider
 {
-    Task<IEnumerable<string>> GetVersionTags(OciChartReference reference, CancellationToken cancellationToken = default);
+    Task<IEnumerable<string>> GetVersionTags(OciChartReference reference, OciRepositoryClientOptions? clientOptions = null, CancellationToken cancellationToken = default);
 
-    Task<RepositoryChartMetadata> GetChart(OciChartVersionReference reference, CancellationToken cancellationToken = default);
+    Task<RepositoryChartMetadata> GetChart(OciChartVersionReference reference, OciRepositoryClientOptions? clientOptions = null, CancellationToken cancellationToken = default);
 }
 
 internal sealed class OciChartProvider(
@@ -23,9 +24,9 @@ internal sealed class OciChartProvider(
         IOciRepositoryClientFactory clientFactory)
     : IOciChartProvider
 {
-    public async Task<IEnumerable<string>> GetVersionTags(OciChartReference reference, CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<string>> GetVersionTags(OciChartReference reference, OciRepositoryClientOptions? clientOptions = null, CancellationToken cancellationToken = default)
     {
-        var client = clientFactory.Create(reference);
+        var client = clientFactory.Create(reference, clientOptions);
 
         try
         {
@@ -43,11 +44,11 @@ internal sealed class OciChartProvider(
         }
     }
 
-    public async Task<RepositoryChartMetadata> GetChart(OciChartVersionReference reference, CancellationToken cancellationToken = default)
+    public async Task<RepositoryChartMetadata> GetChart(OciChartVersionReference reference, OciRepositoryClientOptions? clientOptions = null, CancellationToken cancellationToken = default)
     {
-        var chartUrl = $"{reference.Chart.Repository}/{reference.Chart.Name}:{reference.Version}";
+        var client = clientFactory.Create(reference.Chart, clientOptions);
 
-        var client = clientFactory.Create(reference.Chart);
+        var chartUrl = $"{reference.Chart.Repository}/{reference.Chart.Name}:{reference.Version}";
 
         Descriptor manifestDescriptor;
         Stream manifestStream;
