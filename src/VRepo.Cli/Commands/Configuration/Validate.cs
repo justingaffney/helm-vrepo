@@ -12,7 +12,7 @@ namespace VRepo.Cli.Commands.Configuration;
     Description = "Validates a virtual repository configuration file.",
     ShortFormAutoGenerate = CliNameAutoGenerate.None
 )]
-internal class Generate : Command<Handler.Parameters, Handler>.WithConfigurableLogging
+internal class Validate : Command<Handler.Parameters, Handler>.WithConfigurableLogging
 {
     [CliOption(
         Name = "config",
