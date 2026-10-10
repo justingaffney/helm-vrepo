@@ -2,11 +2,11 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using VRepo.Engine.Models;
 using VRepo.Engine.Models.Policies;
-using VRepo.Engine.Models.Upstream;
 using VRepo.Engine.Services;
 using VRepo.Helm.Sources.Http.Exceptions;
 using VRepo.Helm.Sources.Http.Services;
 using VRepo.Helm.Sources.Oci.Exceptions;
+using VRepo.Helm.Sources.Oci.Models;
 using VRepo.Helm.Sources.Oci.Services;
 using VRepo.Helm.Specification.Models.Charts.Oci;
 using VRepo.Helm.Specification.Models.Repositories;
@@ -46,10 +46,10 @@ public class VirtualRepositoryIndexGeneratorTests
             }));
 
         ociChartProvider
-            .GetVersionTags(Arg.Any<OciChartReference>(), Arg.Any<CancellationToken>())
+            .GetVersionTags(Arg.Any<OciChartReference>(), Arg.Any<OciRepositoryClientOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IEnumerable<string>>(["0.5.0", "1.0.0"]));
         ociChartProvider
-            .GetChart(Arg.Any<OciChartVersionReference>(), Arg.Any<CancellationToken>())
+            .GetChart(Arg.Any<OciChartVersionReference>(), Arg.Any<OciRepositoryClientOptions?>(), Arg.Any<CancellationToken>())
             .Returns(ci => Task.FromResult(CreateChartVersion(
                 ci.Arg<OciChartVersionReference>().Chart.Name,
                 ci.Arg<OciChartVersionReference>().Version,
@@ -118,7 +118,7 @@ public class VirtualRepositoryIndexGeneratorTests
             }));
 
         ociChartProvider
-            .GetVersionTags(Arg.Any<OciChartReference>(), Arg.Any<CancellationToken>())
+            .GetVersionTags(Arg.Any<OciChartReference>(), Arg.Any<OciRepositoryClientOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<IEnumerable<string>>(new OciChartRetrievalException("OCI failure")));
 
         var repository = new VirtualRepository.Builder();
