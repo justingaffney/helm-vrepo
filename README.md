@@ -97,6 +97,8 @@ The configuration file defines:
   - **`repositories`**: List of upstream repositories (HTTP or OCI)
     - **`url`**: Repository URL (`https://`, `http://`, or `oci://`)
     - **`charts`**: Dictionary of chart names to include (chart name as key)
+    - **`oci`**: Optional OCI-specific settings (only applies to `oci://` repositories, ignored for HTTP repositories)
+      - **`authenticationRealmHostname`**: Hostname of the registry's token authentication realm. Only required when the registry issues tokens from a different hostname than the registry itself (see [OCI Authentication Realms](#oci-authentication-realms))
     - **`versionPolicy`**: Optional version filtering for all charts in this repository (overrides global policy)
       - **`exclude.prerelease`**: Exclude prerelease versions (e.g., `1.0.0-alpha`)
       - **`exclude.invalidSemVer`**: Exclude versions that don't follow semantic versioning
@@ -117,6 +119,18 @@ Version patterns support three formats:
 - **Specific version**: `1.2.3`
 - **SemVer range**: `<2.0.0`, `^1.2.3`, `1.0.0 - 2.3.4`, `~1.2.8`
 - **Regular expression**: `^(?!deprecated-).*$` (for complex matching or non-SemVer versions)
+
+### OCI Authentication Realms
+Even when pulling public charts, most OCI registries require an anonymous bearer token, and the registry's `WWW-Authenticate` response tells the client which authentication realm to request the token from. For security, `helm-vrepo` only trusts authentication realms on the same host and port as the registry by default, and fails if the registry points to any other realm.
+
+Some registries issue tokens from a separate hostname (for example Docker Hub, where the registry `registry-1.docker.io` uses the realm `auth.docker.io`). For these registries, set `oci.authenticationRealmHostname` to the realm's hostname so it is trusted. Only a bare hostname is accepted (no scheme, port, or path), and configuration validation fails otherwise. The realm must use HTTPS on the default port:
+```yaml
+- url: oci://registry.example.com/charts
+  oci:
+    authenticationRealmHostname: auth.registry.example.com
+  charts:
+    oci-chart: {}
+```
 
 ### Example Configuration
 ```yaml
