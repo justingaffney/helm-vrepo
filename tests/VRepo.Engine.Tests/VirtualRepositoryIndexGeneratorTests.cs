@@ -174,7 +174,7 @@ public class VirtualRepositoryIndexGeneratorTests
                 {
                     ["alpha"] =
                     [
-                        CreateChartVersion("alpha", "1.0.0", "v2", ["alpha-1.0.0.tgz", "/mirror/alpha-1.0.0.tgz", "https://cdn.example.com/alpha-1.0.0.tgz"])
+                        CreateChartVersion("alpha", "1.0.0", "v2", ["alpha-1.0.0.tgz", "/mirror/alpha-1.0.0.tgz", "https://cdn.example.com/alpha-1.0.0.tgz", "file:///srv/charts/alpha-1.0.0.tgz"])
                     ]
                 },
                 GenerationTime = TimeProvider.System.GetUtcNow()
@@ -201,7 +201,8 @@ public class VirtualRepositoryIndexGeneratorTests
             [
                 "https://example.com/charts/alpha-1.0.0.tgz",
                 "https://example.com/charts/mirror/alpha-1.0.0.tgz",
-                "https://cdn.example.com/alpha-1.0.0.tgz"
+                "https://cdn.example.com/alpha-1.0.0.tgz",
+                "file:///srv/charts/alpha-1.0.0.tgz"
             ],
             chartVersion.Urls);
     }

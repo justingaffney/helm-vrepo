@@ -117,7 +117,7 @@ internal sealed class VirtualRepositoryIndexGenerator(
             for (var i = 0; i < chartVersion.Urls.Length; i++)
             {
                 var url = chartVersion.Urls[i];
-                if (Uri.TryCreate(url, UriKind.Absolute, out _))
+                if (IsAbsoluteUrl(url))
                 {
                     // URL is already absolute
                     continue;
@@ -205,4 +205,16 @@ internal sealed class VirtualRepositoryIndexGenerator(
         IEnumerable<TChartVersion> chartVersions,
         Func<TChartVersion, string> getRawVersion) =>
         SemVerHelper.SortVersionedElements(chartVersions, getRawVersion, ascending: false);
+
+    private static bool IsAbsoluteUrl(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        // On Unix, rooted paths (e.g. "/charts/my-chart.tgz") are parsed as implicit
+        // "file://" URIs, so only treat file URIs as absolute when the scheme is explicit
+        return !uri.IsFile || url.StartsWith($"{Uri.UriSchemeFile}:", StringComparison.OrdinalIgnoreCase);
+    }
 }
