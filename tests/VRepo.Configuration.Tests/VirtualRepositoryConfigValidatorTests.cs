@@ -182,6 +182,62 @@ public class VirtualRepositoryConfigValidatorTests
         Assert.Contains("has already been specified", result.FailureMessage);
     }
 
+    [Theory]
+    [InlineData("auth.example.com:8443")]
+    [InlineData("https://auth.example.com")]
+    [InlineData("auth.example.com/token")]
+    [InlineData("auth example.com")]
+    public void Validate_InvalidOciAuthenticationRealmHostname_Fails(string authenticationRealmHostname)
+    {
+        var config = CreateOciRepositoryConfig(authenticationRealmHostname);
+
+        var validator = new VirtualRepositoryConfigValidator();
+
+        var result = validator.Validate(null, config);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("Repository[0] OCI authentication realm hostname", result.FailureMessage);
+    }
+
+    [Theory]
+    [InlineData("auth.example.com")]
+    [InlineData("localhost")]
+    [InlineData("10.0.0.1")]
+    [InlineData(" ")]
+    [InlineData(null)]
+    public void Validate_ValidOrBlankOciAuthenticationRealmHostname_Succeeds(string? authenticationRealmHostname)
+    {
+        var config = CreateOciRepositoryConfig(authenticationRealmHostname);
+
+        var validator = new VirtualRepositoryConfigValidator();
+
+        var result = validator.Validate(null, config);
+
+        Assert.True(result.Succeeded);
+    }
+
+    private static VirtualRepositoryConfig CreateOciRepositoryConfig(string? authenticationRealmHostname) => new()
+    {
+        Upstream = new VirtualRepositoryConfig.UpstreamConfig
+        {
+            Repositories =
+            [
+                new VirtualRepositoryConfig.UpstreamRepositoryConfig
+                {
+                    Url = new OciUrlRepository("oci://registry.example.com/charts"),
+                    OciRepository = new()
+                    {
+                        AuthenticationRealmHostname = authenticationRealmHostname
+                    },
+                    Charts = new Dictionary<string, VirtualRepositoryConfig.UpstreamRepositoryConfig.ChartConfig>
+                    {
+                        ["oci-chart"] = new()
+                    }
+                }
+            ]
+        }
+    };
+
     [Fact]
     public void Validate_ManualRepositoryChartConflictsWithUpstream_Fails()
     {

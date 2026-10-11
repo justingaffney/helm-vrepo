@@ -1,5 +1,6 @@
 using Json.Schema.Generation;
 using VRepo.Common.Serialization.Exceptions;
+using VRepo.Common.Serialization.Json.Schema.Attributes;
 using VRepo.Common.Serialization.Yaml;
 using VRepo.Common.Serialization.Yaml.Converters;
 using VRepo.Common.Serialization.Yaml.EventEmitters;
@@ -141,6 +142,7 @@ public sealed class VirtualRepositoryConfig : ApiVersionable, IConfigurationRoot
             [YamlMember(Alias = "authenticationRealmHostname")]
             [YamlExampleComment("Authentication realm hostname for the OCI repository.\nThis is only required for OCI registries with different authentication realm hostnames.")]
             [Description("The authentication realm hostname for the OCI repository. This is only required for OCI registries with different authentication realm hostnames.")]
+            [Hostname]
             public string? AuthenticationRealmHostname { get; init; }
         }
 

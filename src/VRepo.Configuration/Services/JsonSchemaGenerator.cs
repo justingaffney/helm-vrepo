@@ -50,6 +50,7 @@ internal sealed class JsonSchemaGenerator : IJsonSchemaGenerator
         // Register standard attribute handlers
         AttributeHandler.AddHandler<YamlIgnoreAttributeHandler>();
         AttributeHandler.AddHandler<StringEnumAttributeHandler>();
+        AttributeHandler.AddHandler<HostnameAttributeHandler>();
 
         // Register standard generators
         GeneratorRegistry.Register(new DateTimeOffsetGenerator());

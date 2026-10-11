@@ -37,6 +37,14 @@ internal class VirtualRepositoryConfigValidator : IValidateOptions<VirtualReposi
                     continue;
                 }
 
+                // Must be a bare hostname to match ORAS trusted realm hosts (no scheme, port, or path)
+                var authenticationRealmHostname = repository.OciRepository?.AuthenticationRealmHostname;
+                if (!string.IsNullOrWhiteSpace(authenticationRealmHostname) &&
+                    Uri.CheckHostName(authenticationRealmHostname) is not (UriHostNameType.Dns or UriHostNameType.IPv4))
+                {
+                    errors.Add($"Repository[{i}] OCI authentication realm hostname \"{authenticationRealmHostname}\" is not a valid hostname. Only a hostname is allowed, without a scheme, port, or path.");
+                }
+
                 foreach (var (chartName, chartConfiguration) in repository.Charts)
                 {
                     if (chartNames.Contains(chartName))
