@@ -13,5 +13,6 @@
     <Project Path="tests/VRepo.Common.Tests/VRepo.Common.Tests.csproj" />
     <Project Path="tests/VRepo.Configuration.Tests/VRepo.Configuration.Tests.csproj" />
     <Project Path="tests/VRepo.Engine.Tests/VRepo.Engine.Tests.csproj" />
+    <Project Path="tests/VRepo.Helm.Tests/VRepo.Helm.Tests.csproj" />
   </Folder>
 </Solution>

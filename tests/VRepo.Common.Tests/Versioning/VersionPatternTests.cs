@@ -100,4 +100,41 @@ public class VersionPatternTests
     {
         Assert.Equal(expected, VersionPattern.Parse(pattern).IsMatch(value));
     }
+
+    [Theory]
+    [InlineData("(", "(", true)]
+    [InlineData("(", "1.0.0", false)]
+    [InlineData("[release", "[release", true)]
+    public void IsMatch_TreatsInvalidRegexAsLiteralWildcardPattern(string pattern, string value, bool expected)
+    {
+        Assert.Equal(expected, VersionPattern.Parse(pattern).IsMatch(value));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void ParseAndTryParse_RejectBlankValues(string value)
+    {
+        Assert.Throws<FormatException>(() => VersionPattern.Parse(value));
+
+        Assert.False(VersionPattern.TryParse(value, out var pattern));
+        Assert.Null(pattern);
+    }
+
+    [Theory]
+    [InlineData(">=1.0.0")]
+    [InlineData("^release-.*$")]
+    public void TryParse_AcceptsValidValues_AndPreservesRawPattern(string value)
+    {
+        Assert.True(VersionPattern.TryParse(value, out var pattern));
+        Assert.Equal(value, pattern.ToString());
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void IsMatch_ThrowsForBlankVersion(string version)
+    {
+        Assert.ThrowsAny<ArgumentException>(() => VersionPattern.Parse(">=1.0.0").IsMatch(version));
+    }
 }

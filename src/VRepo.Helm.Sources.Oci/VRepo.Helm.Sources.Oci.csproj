@@ -9,4 +9,8 @@
     <ProjectReference Include="../VRepo.Helm.Specification/VRepo.Helm.Specification.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="VRepo.Helm.Tests" />
+  </ItemGroup>
+
 </Project>

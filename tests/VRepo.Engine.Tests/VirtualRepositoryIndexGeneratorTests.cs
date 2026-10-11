@@ -155,6 +155,203 @@ public class VirtualRepositoryIndexGeneratorTests
         Assert.Equal(["manual-chart"], index.Entries.Keys.ToArray());
     }
 
+    [Fact]
+    public async Task Generate_ConvertsRelativeHttpChartUrlsToAbsoluteUrls()
+    {
+        var httpRepositoryIndexProvider = Substitute.For<IHttpRepositoryIndexProvider>();
+        var chartVersionPolicyEvaluator = Substitute.For<IChartVersionPolicyEvaluator>();
+        chartVersionPolicyEvaluator
+            .VersionIsPermitted(Arg.Any<ChartVersionPolicy>(), Arg.Any<string>())
+            .Returns(true);
+
+        var httpRepository = new HttpUrlRepository("https://example.com/charts/");
+
+        httpRepositoryIndexProvider
+            .Get(httpRepository, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new RepositoryIndex
+            {
+                Entries = new Dictionary<string, IReadOnlyList<RepositoryChartMetadata>>
+                {
+                    ["alpha"] =
+                    [
+                        CreateChartVersion("alpha", "1.0.0", "v2", ["alpha-1.0.0.tgz", "/mirror/alpha-1.0.0.tgz", "https://cdn.example.com/alpha-1.0.0.tgz"])
+                    ]
+                },
+                GenerationTime = TimeProvider.System.GetUtcNow()
+            }));
+
+        var repository = new VirtualRepository.Builder();
+        repository.AddUpstreamHttpRepository(httpRepository, builder => builder.AddChart(new()
+        {
+            Name = "alpha",
+            VersionPolicy = CreatePolicy()
+        }));
+
+        var generator = new VirtualRepositoryIndexGenerator(
+            NullLogger<VirtualRepositoryIndexGenerator>.Instance,
+            TimeProvider.System,
+            httpRepositoryIndexProvider,
+            Substitute.For<IOciChartProvider>(),
+            chartVersionPolicyEvaluator);
+
+        var index = await generator.Generate(repository.Build(), TestContext.Current.CancellationToken);
+
+        var chartVersion = Assert.Single(index.Entries["alpha"]);
+        Assert.Equal(
+            [
+                "https://example.com/charts/alpha-1.0.0.tgz",
+                "https://example.com/charts/mirror/alpha-1.0.0.tgz",
+                "https://cdn.example.com/alpha-1.0.0.tgz"
+            ],
+            chartVersion.Urls);
+    }
+
+    [Fact]
+    public async Task Generate_ExcludesVersionsRejectedByPolicy()
+    {
+        var httpRepositoryIndexProvider = Substitute.For<IHttpRepositoryIndexProvider>();
+        var ociChartProvider = Substitute.For<IOciChartProvider>();
+        var chartVersionPolicyEvaluator = Substitute.For<IChartVersionPolicyEvaluator>();
+        chartVersionPolicyEvaluator
+            .VersionIsPermitted(Arg.Any<ChartVersionPolicy>(), Arg.Any<string>())
+            .Returns(ci => ci.Arg<string>() != "2.0.0-rc.1");
+
+        var httpRepository = new HttpUrlRepository("https://example.com/charts");
+        var ociRepository = new OciUrlRepository("oci://example.com/charts");
+
+        httpRepositoryIndexProvider
+            .Get(httpRepository, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new RepositoryIndex
+            {
+                Entries = new Dictionary<string, IReadOnlyList<RepositoryChartMetadata>>
+                {
+                    ["alpha"] =
+                    [
+                        CreateChartVersion("alpha", "1.0.0", "v2", ["https://example.com/charts/alpha-1.0.0.tgz"]),
+                        CreateChartVersion("alpha", "2.0.0-rc.1", "v2", ["https://example.com/charts/alpha-2.0.0-rc.1.tgz"])
+                    ]
+                },
+                GenerationTime = TimeProvider.System.GetUtcNow()
+            }));
+
+        ociChartProvider
+            .GetVersionTags(Arg.Any<OciChartReference>(), Arg.Any<OciRepositoryClientOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IEnumerable<string>>(["1.0.0", "2.0.0-rc.1"]));
+        ociChartProvider
+            .GetChart(Arg.Any<OciChartVersionReference>(), Arg.Any<OciRepositoryClientOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => Task.FromResult(CreateChartVersion("beta", ci.Arg<OciChartVersionReference>().Version, "v2", ["oci://example.com/charts/beta"])));
+
+        var repository = new VirtualRepository.Builder();
+        repository.AddUpstreamHttpRepository(httpRepository, builder => builder.AddChart(new()
+        {
+            Name = "alpha",
+            VersionPolicy = CreatePolicy()
+        }));
+        repository.AddUpstreamOciRepository(ociRepository, builder => builder.AddChart(new()
+        {
+            Name = "beta",
+            VersionPolicy = CreatePolicy()
+        }));
+
+        var generator = new VirtualRepositoryIndexGenerator(
+            NullLogger<VirtualRepositoryIndexGenerator>.Instance,
+            TimeProvider.System,
+            httpRepositoryIndexProvider,
+            ociChartProvider,
+            chartVersionPolicyEvaluator);
+
+        var index = await generator.Generate(repository.Build(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(["1.0.0"], index.Entries["alpha"].Select(version => version.Version).ToArray());
+        Assert.Equal(["1.0.0"], index.Entries["beta"].Select(version => version.Version).ToArray());
+
+        // Excluded OCI versions should never be fetched
+        await ociChartProvider
+            .DidNotReceive()
+            .GetChart(Arg.Is<OciChartVersionReference>(reference => reference.Version == "2.0.0-rc.1"), Arg.Any<OciRepositoryClientOptions?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Generate_SkipsFailedOciChartVersionRetrievals_AndKeepsRemainingVersions()
+    {
+        var ociChartProvider = Substitute.For<IOciChartProvider>();
+        var chartVersionPolicyEvaluator = Substitute.For<IChartVersionPolicyEvaluator>();
+        chartVersionPolicyEvaluator
+            .VersionIsPermitted(Arg.Any<ChartVersionPolicy>(), Arg.Any<string>())
+            .Returns(true);
+
+        ociChartProvider
+            .GetVersionTags(Arg.Any<OciChartReference>(), Arg.Any<OciRepositoryClientOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IEnumerable<string>>(["1.0.0", "2.0.0", "3.0.0"]));
+        ociChartProvider
+            .GetChart(Arg.Any<OciChartVersionReference>(), Arg.Any<OciRepositoryClientOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ci.Arg<OciChartVersionReference>().Version == "2.0.0"
+                ? Task.FromException<RepositoryChartMetadata>(new OciChartRetrievalException("Manifest failure"))
+                : Task.FromResult(CreateChartVersion("beta", ci.Arg<OciChartVersionReference>().Version, "v2", ["oci://example.com/charts/beta"])));
+
+        var repository = new VirtualRepository.Builder();
+        repository.AddUpstreamOciRepository(new OciUrlRepository("oci://example.com/charts"), builder => builder.AddChart(new()
+        {
+            Name = "beta",
+            VersionPolicy = CreatePolicy()
+        }));
+
+        var generator = new VirtualRepositoryIndexGenerator(
+            NullLogger<VirtualRepositoryIndexGenerator>.Instance,
+            TimeProvider.System,
+            Substitute.For<IHttpRepositoryIndexProvider>(),
+            ociChartProvider,
+            chartVersionPolicyEvaluator);
+
+        var index = await generator.Generate(repository.Build(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(["3.0.0", "1.0.0"], index.Entries["beta"].Select(version => version.Version).ToArray());
+    }
+
+    [Fact]
+    public async Task Generate_PassesOciRepositoryClientOptionsToProvider()
+    {
+        var ociChartProvider = Substitute.For<IOciChartProvider>();
+        var chartVersionPolicyEvaluator = Substitute.For<IChartVersionPolicyEvaluator>();
+        chartVersionPolicyEvaluator
+            .VersionIsPermitted(Arg.Any<ChartVersionPolicy>(), Arg.Any<string>())
+            .Returns(true);
+
+        ociChartProvider
+            .GetVersionTags(Arg.Any<OciChartReference>(), Arg.Any<OciRepositoryClientOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IEnumerable<string>>(["1.0.0"]));
+        ociChartProvider
+            .GetChart(Arg.Any<OciChartVersionReference>(), Arg.Any<OciRepositoryClientOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(CreateChartVersion("beta", "1.0.0", "v2", ["oci://example.com/charts/beta"])));
+
+        var repository = new VirtualRepository.Builder();
+        repository.AddUpstreamOciRepository(new OciUrlRepository("oci://example.com/charts"), builder =>
+        {
+            builder.SetAuthenticationRealmHostname("auth.example.com");
+            builder.AddChart(new()
+            {
+                Name = "beta",
+                VersionPolicy = CreatePolicy()
+            });
+        });
+
+        var generator = new VirtualRepositoryIndexGenerator(
+            NullLogger<VirtualRepositoryIndexGenerator>.Instance,
+            TimeProvider.System,
+            Substitute.For<IHttpRepositoryIndexProvider>(),
+            ociChartProvider,
+            chartVersionPolicyEvaluator);
+
+        await generator.Generate(repository.Build(), TestContext.Current.CancellationToken);
+
+        await ociChartProvider
+            .Received(1)
+            .GetVersionTags(Arg.Any<OciChartReference>(), Arg.Is<OciRepositoryClientOptions?>(options => options!.AuthenticationRealmHostname == "auth.example.com"), Arg.Any<CancellationToken>());
+        await ociChartProvider
+            .Received(1)
+            .GetChart(Arg.Any<OciChartVersionReference>(), Arg.Is<OciRepositoryClientOptions?>(options => options!.AuthenticationRealmHostname == "auth.example.com"), Arg.Any<CancellationToken>());
+    }
+
     private static ChartVersionPolicy CreatePolicy() => new()
     {
         ExclusionRules = new ChartVersionExclusionRules

@@ -94,4 +94,41 @@ upstream:
         Assert.False(chartB!.VersionPolicy.ExclusionRules.ExcludeInvalidSemVer);
         Assert.True(chartB.VersionPolicy.ExclusionRules.ExcludePrereleaseVersions);
     }
+
+    [Fact]
+    public async Task Read_MapsOciRepositoryAuthenticationRealmHostname()
+    {
+        var validator = Substitute.For<IValidateOptions<VirtualRepositoryConfig>>();
+        validator
+            .Validate(Arg.Any<string?>(), Arg.Any<VirtualRepositoryConfig>())
+            .Returns(ValidateOptionsResult.Success);
+
+        var reader = new VirtualRepositoryReader(validator);
+
+        var yaml = @"apiVersion: v1alpha1
+upstream:
+  repositories:
+    - url: oci://registry.example.com/with-realm
+      oci:
+        authenticationRealmHostname: auth.example.com
+      charts:
+        chart-a:
+    - url: oci://registry.example.com/blank-realm
+      oci:
+        authenticationRealmHostname: ' '
+      charts:
+        chart-b:
+    - url: oci://registry.example.com/without-realm
+      charts:
+        chart-c:
+";
+
+        var repository = await reader.Read(new StringReader(yaml), TestContext.Current.CancellationToken);
+
+        var repositories = repository.UpstreamRepositories.Oci.ToDictionary(repo => repo.Url.ToString());
+        Assert.Equal(3, repositories.Count);
+        Assert.Equal("auth.example.com", repositories["oci://registry.example.com/with-realm"].ClientOptions.AuthenticationRealmHostname);
+        Assert.Null(repositories["oci://registry.example.com/blank-realm"].ClientOptions.AuthenticationRealmHostname);
+        Assert.Null(repositories["oci://registry.example.com/without-realm"].ClientOptions.AuthenticationRealmHostname);
+    }
 }

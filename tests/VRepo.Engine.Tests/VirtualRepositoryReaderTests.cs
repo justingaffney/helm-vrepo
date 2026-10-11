@@ -47,6 +47,55 @@ public class VirtualRepositoryReaderTests
         Assert.NotNull(repository.ManualRepository);
     }
 
+    [Theory]
+    [InlineData("upstream: {}\n")]
+    [InlineData("apiVersion: ''\n")]
+    public async Task Read_ThrowsValidationException_WhenApiVersionIsMissingOrBlank(string yaml)
+    {
+        var validator = Substitute.For<IValidateOptions<VirtualRepositoryConfig>>();
+        var reader = new VirtualRepositoryReader(validator);
+
+        await Assert.ThrowsAsync<ValidationException>(async () =>
+            await reader.Read(new StringReader(yaml), TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Read_ThrowsValidationException_WhenConfigurationCannotBeDeserialized()
+    {
+        var validator = Substitute.For<IValidateOptions<VirtualRepositoryConfig>>();
+        var reader = new VirtualRepositoryReader(validator);
+
+        var yaml = @"apiVersion: v1alpha1
+upstream:
+  repositories:
+    - url: not-a-repository-url
+      charts:
+        chart-a:
+";
+
+        var exception = await Assert.ThrowsAsync<ValidationException>(async () =>
+            await reader.Read(new StringReader(yaml), TestContext.Current.CancellationToken));
+
+        Assert.StartsWith("Failed to deserialize configuration YAML", exception.Message, StringComparison.Ordinal);
+        validator.DidNotReceiveWithAnyArgs().Validate(default, default!);
+    }
+
+    [Fact]
+    public async Task Read_ThrowsGenericValidationException_WhenValidatorReportsOnlyBlankFailures()
+    {
+        var validator = Substitute.For<IValidateOptions<VirtualRepositoryConfig>>();
+        validator
+            .Validate(Arg.Any<string?>(), Arg.Any<VirtualRepositoryConfig>())
+            .Returns(ValidateOptionsResult.Fail([" "]));
+
+        var reader = new VirtualRepositoryReader(validator);
+
+        var exception = await Assert.ThrowsAsync<ValidationException>(async () =>
+            await reader.Read(new StringReader(VirtualRepositoryConfig.CreateSerializedExample()), TestContext.Current.CancellationToken));
+
+        Assert.Equal("Configuration is not valid.", exception.Message);
+    }
+
     [Fact]
     public async Task Read_ThrowsValidationException_WhenValidatorReportsFailures()
     {

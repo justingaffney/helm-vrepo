@@ -15,6 +15,15 @@ public class RegexHelperTests
         Assert.False(RegexHelper.TryParse("(", out _));
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void TryParse_RejectsBlankPatterns(string pattern)
+    {
+        Assert.False(RegexHelper.TryParse(pattern, out var regex));
+        Assert.Null(regex);
+    }
+
     [Fact]
     public void WildcardToRegex_TransformsWildcardPatterns()
     {
